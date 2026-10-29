@@ -28,4 +28,21 @@ void main() {
     expect(find.text('Tạo tài khoản  →'), findsOneWidget);
     expect(find.byType(TextField), findsNWidgets(4));
   });
+
+  testWidgets('switching from login to registration clears old credentials', (
+    tester,
+  ) async {
+    await tester.pumpWidget(const ChamCongApp());
+    await tester.enterText(find.byType(TextField).at(0), 'admin');
+    await tester.enterText(find.byType(TextField).at(1), 'old-password');
+
+    final registerLink = find.text('Chưa có tài khoản? Đăng ký');
+    await tester.ensureVisible(registerLink);
+    await tester.tap(registerLink);
+    await tester.pumpAndSettle();
+
+    final fields = tester.widgetList<TextField>(find.byType(TextField));
+    expect(fields, hasLength(4));
+    expect(fields.every((field) => field.controller?.text.isEmpty ?? true), isTrue);
+  });
 }

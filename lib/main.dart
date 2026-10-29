@@ -225,6 +225,7 @@ class _LoginPageState extends State<LoginPage> {
                   const SizedBox(height: 8),
                   TextField(
                     controller: fullName,
+                    autofillHints: const [AutofillHints.name],
                     decoration: const InputDecoration(
                       prefixIcon: Icon(Icons.badge_outlined),
                       hintText: 'Nhập họ và tên',
@@ -239,6 +240,7 @@ class _LoginPageState extends State<LoginPage> {
                   TextField(
                     controller: email,
                     keyboardType: TextInputType.emailAddress,
+                    autofillHints: const [AutofillHints.email],
                     decoration: const InputDecoration(
                       prefixIcon: Icon(Icons.email_outlined),
                       hintText: 'ten@congty.vn',
@@ -253,6 +255,13 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 8),
                 TextField(
                   controller: user,
+                  autocorrect: false,
+                  enableSuggestions: false,
+                  autofillHints: [
+                    isRegistering
+                        ? AutofillHints.newUsername
+                        : AutofillHints.username,
+                  ],
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.person_outline),
                     hintText: 'Nhập tên đăng nhập',
@@ -267,6 +276,12 @@ class _LoginPageState extends State<LoginPage> {
                 TextField(
                   controller: password,
                   obscureText: true,
+                  enableSuggestions: false,
+                  autofillHints: [
+                    isRegistering
+                        ? AutofillHints.newPassword
+                        : AutofillHints.password,
+                  ],
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.lock_outline),
                     hintText: 'Nhập mật khẩu',
@@ -346,6 +361,10 @@ class _LoginPageState extends State<LoginPage> {
                         otp.clear();
                       } else {
                         isRegistering = !isRegistering;
+                        user.clear();
+                        password.clear();
+                        fullName.clear();
+                        email.clear();
                       }
                     }),
                     child: Text(
