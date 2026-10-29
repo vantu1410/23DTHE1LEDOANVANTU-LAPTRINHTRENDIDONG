@@ -1,0 +1,112 @@
+using System.Text;
+using LEDOANVANTU2.Api.Data;
+using LEDOANVANTU2.Api.Models;
+using LEDOANVANTU2.Api.Services;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Identity;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
+
+var builder = WebApplication.CreateBuilder(args);
+var provider = builder.Configuration["Database:Provider"] ?? "SqlServer";
+var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
+if (string.IsNullOrWhiteSpace(connectionString))
+    connectionString = builder.Configuration["DATABASE_URL"];
+if (string.IsNullOrWhiteSpace(connectionString))
+    throw new InvalidOperationException("Cấu hình ConnectionStrings:DefaultConnection hoặc DATABASE_URL trước khi chạy API.");
+
+var jwtKey = builder.Configuration["Jwt:Key"];
+if (string.IsNullOrWhiteSpace(jwtKey) || Encoding.UTF8.GetByteCount(jwtKey) < 32)
+    throw new InvalidOperationException("Cấu hình Jwt:Key tối thiểu 32 byte bằng user-secrets hoặc biến môi trường.");
+
+builder.Services.AddDbContext<AppDbContext>(options =>
+{
+    if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+        options.UseNpgsql(ParsePostgresUrl(connectionString));
+    else
+        options.UseSqlServer(connectionString);
+});
+builder.Services.AddScoped<IPasswordHasher<AppUser>, PasswordHasher<AppUser>>();
+builder.Services.AddSingleton<OtpEmailSender>();
+builder.Services.AddControllers();
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
+builder.Services.AddCors(options => options.AddPolicy("MobileApp", policy =>
+    policy.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod()));
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme).AddJwtBearer(options =>
+{
+    options.TokenValidationParameters = new TokenValidationParameters
+    {
+        ValidateIssuer = true,
+        ValidIssuer = builder.Configuration["Jwt:Issuer"],
+        ValidateAudience = true,
+        ValidAudience = builder.Configuration["Jwt:Audience"],
+        ValidateIssuerSigningKey = true,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey)),
+        ValidateLifetime = true,
+        ClockSkew = TimeSpan.FromSeconds(30)
+    };
+});
+builder.Services.AddAuthorization();
+
+var app = builder.Build();
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+        await db.Database.EnsureCreatedAsync();
+    else
+        await db.Database.MigrateAsync();
+    await BootstrapAdminAsync(scope.ServiceProvider, builder.Configuration);
+}
+app.UseSwagger();
+app.UseSwaggerUI();
+app.UseCors("MobileApp");
+app.UseAuthentication();
+app.UseAuthorization();
+app.MapGet("/health", () => Results.Ok(new { status = "ok", app = "LEDOANVANTU2.Api" }));
+app.MapControllers();
+app.Run();
+
+static string ParsePostgresUrl(string value)
+{
+    if (!Uri.TryCreate(value, UriKind.Absolute, out var uri) || (uri.Scheme != "postgres" && uri.Scheme != "postgresql"))
+        return value;
+    var userInfo = uri.UserInfo.Split(':', 2);
+    var builder = new Npgsql.NpgsqlConnectionStringBuilder
+    {
+        Host = uri.Host,
+        Port = uri.Port > 0 ? uri.Port : 5432,
+        Database = Uri.UnescapeDataString(uri.AbsolutePath.TrimStart('/')),
+        Username = Uri.UnescapeDataString(userInfo[0]),
+        Password = userInfo.Length > 1 ? Uri.UnescapeDataString(userInfo[1]) : string.Empty,
+        SslMode = Npgsql.SslMode.Require
+    };
+    return builder.ConnectionString;
+}
+
+static async Task BootstrapAdminAsync(IServiceProvider services, IConfiguration configuration)
+{
+    var username = configuration["BootstrapAdmin:Username"];
+    var password = configuration["BootstrapAdmin:Password"];
+    var email = configuration["BootstrapAdmin:Email"];
+    var fullName = configuration["BootstrapAdmin:FullName"];
+    if (string.IsNullOrWhiteSpace(username) || string.IsNullOrWhiteSpace(password) ||
+        string.IsNullOrWhiteSpace(email) || string.IsNullOrWhiteSpace(fullName)) return;
+
+    var db = services.GetRequiredService<AppDbContext>();
+    if (await db.Users.AnyAsync(x => x.Username == username)) return;
+    var user = new AppUser
+    {
+        Username = username.Trim(),
+        Email = email.Trim().ToLowerInvariant(),
+        FullName = fullName.Trim(),
+        PasswordHash = "pending",
+        Role = "Admin",
+        EmailVerified = true
+    };
+    user.PasswordHash = services.GetRequiredService<IPasswordHasher<AppUser>>()
+        .HashPassword(user, password);
+    db.Users.Add(user);
+    await db.SaveChangesAsync();
+}

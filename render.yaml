@@ -1,0 +1,56 @@
+databases:
+  - name: ledoanvantu2-db
+    databaseName: tutime
+    user: tutime
+    plan: free
+    region: singapore
+    postgresMajorVersion: "16"
+
+services:
+  - type: web
+    name: ledoanvantu2-api
+    runtime: docker
+    plan: free
+    region: singapore
+    dockerContext: ./backend/LEDOANVANTU2.Api
+    dockerfilePath: ./backend/LEDOANVANTU2.Api/Dockerfile
+    healthCheckPath: /health
+    envVars:
+      - key: ASPNETCORE_ENVIRONMENT
+        value: Production
+      - key: Database__Provider
+        value: Postgres
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ledoanvantu2-db
+          property: connectionString
+      - key: Jwt__Issuer
+        value: LEDOANVANTU2.Api
+      - key: Jwt__Audience
+        value: LEDOANVANTU2.Mobile
+      - key: Jwt__Key
+        generateValue: true
+      - key: Office__Latitude
+        value: "10.7769"
+      - key: Office__Longitude
+        value: "106.7009"
+      - key: Office__RadiusMeters
+        value: "150"
+      - key: BootstrapAdmin__Username
+        sync: false
+      - key: BootstrapAdmin__Password
+        sync: false
+      - key: BootstrapAdmin__Email
+        sync: false
+      - key: BootstrapAdmin__FullName
+        sync: false
+      - key: Smtp__Host
+        sync: false
+      - key: Smtp__Port
+        value: "587"
+      - key: Smtp__Username
+        sync: false
+      - key: Smtp__Password
+        sync: false
+      - key: Smtp__From
+        sync: false
