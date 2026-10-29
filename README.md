@@ -1,6 +1,6 @@
 # TuTime chấm công
 
-TuTime là ứng dụng Flutter chấm công cho nhân viên. Ứng dụng xác thực bằng QR theo ngày, sinh trắc học có sẵn trên điện thoại và vị trí GPS quanh văn phòng. Chỉ gửi vị trí khi nhân viên bấm chấm công; backend kiểm tra khoảng cách rồi chỉ lưu khoảng cách tới văn phòng, không lưu tọa độ chính xác.
+TuTime là ứng dụng Flutter chấm công cho nhân viên. Ba chức năng trình bày đã chọn là **chia sẻ vị trí GPS (b)**, **đo áp suất khí quyển (d)** và **quét QR (e)**. Chấm công còn yêu cầu sinh trắc học trên thiết bị. Chỉ gửi vị trí khi nhân viên bấm chấm công; backend kiểm tra khoảng cách rồi chỉ lưu khoảng cách tới văn phòng, không lưu tọa độ chính xác.
 
 Project Flutter mang tên cá nhân `LEDOANVANTU2`. Mã Flutter nằm trong `lib/`; API ASP.NET Core nằm trong `backend/LEDOANVANTU2.Api/`. Thư mục `app/` ở gốc là project Kotlin ban đầu, được giữ lại làm bản gốc tham khảo; ứng dụng Flutter Android được build từ `android/`.
 
@@ -16,6 +16,8 @@ Không đặt `API_BASE_URL` thì app chạy chế độ demo. Đăng nhập dem
 Khi API đã deploy, nhân viên đăng ký bằng email, username và mật khẩu; backend gửi OTP qua email. Đăng nhập dùng username, mật khẩu và OTP. Vai trò nhận từ token backend; tài khoản mới là `Employee`. Tài khoản admin được khởi tạo riêng bằng các biến `BootstrapAdmin__...` trên Render.
 
 Admin mở **Tài khoản → Mã QR điểm danh hôm nay** để hiển thị QR. Nhân viên quét QR đó trên điện thoại, xác thực sinh trắc học, rồi app kiểm tra GPS. QR có hiệu lực theo ngày Việt Nam. Tọa độ văn phòng hiện dùng là tọa độ mẫu ở TP.HCM (`10.7769`, `106.7009`); thay `Office__Latitude`, `Office__Longitude` trên Render và dùng cùng giá trị `OFFICE_LAT`/`OFFICE_LNG` khi build APK để geofence khớp văn phòng thực tế.
+
+Mục d mở tại **Tài khoản → Đo áp suất không khí**. Trên Android Emulator, mở **⋮ → Virtual sensors → Additional sensors → Pressure** để thay đổi giá trị cảm biến mô phỏng. Một đăng ký chưa xác nhận có thể gửi lại cùng email và tên đăng nhập để nhận OTP mới; OTP đăng ký/đăng nhập hết hạn sau 5 phút.
 
 ## API theo bài Tuần 6
 

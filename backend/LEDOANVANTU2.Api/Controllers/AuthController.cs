@@ -27,10 +27,17 @@ public sealed class AuthController(
     {
         var username = request.Username.Trim();
         var email = request.Email.Trim().ToLowerInvariant();
-        if (await db.Users.AnyAsync(x => x.Username == username || x.Email == email, ct))
+        var user = await db.Users.FirstOrDefaultAsync(
+            x => x.Username == username || x.Email == email,
+            ct);
+        var retryingUnverifiedRegistration = user is not null &&
+            !user.EmailVerified &&
+            string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase) &&
+            string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase);
+        if (user is not null && !retryingUnverifiedRegistration)
             return Conflict(new { message = "Tên đăng nhập hoặc email đã được sử dụng." });
 
-        var user = new AppUser
+        user ??= new AppUser
         {
             FullName = request.FullName.Trim(),
             Email = email,
@@ -39,9 +46,12 @@ public sealed class AuthController(
             Role = "Employee"
         };
         user.PasswordHash = passwordHasher.HashPassword(user, request.Password);
+        user.FullName = request.FullName.Trim();
+        user.Email = email;
+        user.Username = username;
         var code = NewOtp();
         SetOtp(user, code, "register");
-        db.Users.Add(user);
+        if (!retryingUnverifiedRegistration) db.Users.Add(user);
         await db.SaveChangesAsync(ct);
         string? debugCode;
         try
@@ -50,11 +60,17 @@ public sealed class AuthController(
         }
         catch
         {
-            db.Users.Remove(user);
-            await db.SaveChangesAsync(ct);
+            if (!retryingUnverifiedRegistration)
+            {
+                db.Users.Remove(user);
+                await db.SaveChangesAsync(ct);
+            }
             throw;
         }
-        return Ok(new { message = "Đã gửi OTP đến email đăng ký.", otpRequired = true, debugOtp = environment.IsDevelopment() ? debugCode : null });
+        var message = retryingUnverifiedRegistration
+            ? "Tài khoản chưa xác nhận. Đã gửi mã OTP mới đến email đăng ký."
+            : "Đã gửi OTP đến email đăng ký.";
+        return Ok(new { message, otpRequired = true, debugOtp = environment.IsDevelopment() ? debugCode : null });
     }
 
     [HttpPost("login")]

@@ -1,8 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:local_auth/local_auth.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:sensors_plus/sensors_plus.dart';
 
 import 'models/employee.dart';
 import 'models/punch_record.dart';
@@ -833,7 +836,7 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 8),
         const Center(
           child: Text(
-            'Xác thực khuôn mặt  ·  QR  ·  Vị trí GPS',
+            'QR  ·  Sinh trắc học  ·  Vị trí GPS',
             style: TextStyle(fontSize: 11, color: Color(0xFF8B98AA)),
           ),
         ),
@@ -1338,6 +1341,14 @@ class _HomePageState extends State<HomePage> {
         () => _notice('Cài đặt bảo mật'),
       ),
       _setting(
+        Icons.speed_rounded,
+        'Đo áp suất không khí',
+        'Cảm biến khí áp · Mục d',
+        () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => const PressureSensorPage()),
+        ),
+      ),
+      _setting(
         Icons.help_outline,
         'Trợ giúp',
         'Hướng dẫn sử dụng TuTime',
@@ -1645,6 +1656,98 @@ class _HomePageState extends State<HomePage> {
     code.dispose();
     job.dispose();
   }
+}
+
+class PressureSensorPage extends StatefulWidget {
+  const PressureSensorPage({super.key});
+
+  @override
+  State<PressureSensorPage> createState() => _PressureSensorPageState();
+}
+
+class _PressureSensorPageState extends State<PressureSensorPage> {
+  StreamSubscription<BarometerEvent>? _subscription;
+  double? _pressureHpa;
+  bool _sensorUnavailable = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _subscription = barometerEventStream(
+      samplingPeriod: const Duration(seconds: 1),
+    ).listen(
+      (event) {
+        if (mounted) setState(() => _pressureHpa = event.pressure);
+      },
+      onError: (Object error) {
+        if (mounted) setState(() => _sensorUnavailable = true);
+      },
+    );
+  }
+
+  @override
+  void dispose() {
+    _subscription?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Đo áp suất không khí'),
+      backgroundColor: canvas,
+      foregroundColor: ink,
+    ),
+    body: Center(
+      child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(Icons.speed_rounded, size: 72, color: blue),
+            const SizedBox(height: 18),
+            const Text(
+              'Áp suất khí quyển',
+              style: TextStyle(
+                fontSize: 22,
+                fontWeight: FontWeight.w800,
+                color: ink,
+              ),
+            ),
+            const SizedBox(height: 10),
+            Text(
+              _sensorUnavailable
+                  ? 'Thiết bị không cung cấp cảm biến áp suất.'
+                  : _pressureHpa == null
+                  ? 'Đang đọc cảm biến…'
+                  : '${_pressureHpa!.toStringAsFixed(1)} hPa',
+              style: const TextStyle(
+                fontSize: 30,
+                color: navy,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Dữ liệu đọc trực tiếp từ cảm biến khí áp của thiết bị.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFF78869A)),
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Trên giả lập: mở ⋮ → Virtual sensors → Additional sensors → Pressure để thay đổi giá trị mô phỏng.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: Color(0xFF78869A),
+                height: 1.5,
+              ),
+            ),
+          ],
+        ),
+      ),
+    ),
+  );
 }
 
 class QrScanPage extends StatefulWidget {
