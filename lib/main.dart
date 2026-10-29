@@ -64,11 +64,11 @@ class LoginPage extends StatefulWidget {
 
 class _LoginPageState extends State<LoginPage> {
   static const _apiBaseUrl = String.fromEnvironment('API_BASE_URL');
-  final user = TextEditingController(text: 'nhanvien');
-  final password = TextEditingController(text: '123456');
+  final user = TextEditingController();
+  final password = TextEditingController();
   final otp = TextEditingController();
-  final fullName = TextEditingController(text: 'Lê Đoàn Văn Tú');
-  final email = TextEditingController(text: 'tuvd@example.com');
+  final fullName = TextEditingController();
+  final email = TextEditingController();
   late final AuthApi? _authApi;
   bool showOtp = false;
   bool isRegistering = false;
