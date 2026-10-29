@@ -1568,35 +1568,67 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _showOfficeQr() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Mã QR công ty cố định'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            QrImageView(
-              data: companyQrPayload,
-              size: 230,
-              backgroundColor: Colors.white,
-            ),
-            const SizedBox(height: 12),
-            const Text(
-              'Bạn có thể chụp màn hình mã này để dùng lại. Nhân viên vẫn phải ở trong vùng GPS văn phòng.',
-              textAlign: TextAlign.center,
-              style: TextStyle(fontSize: 12, color: Color(0xFF78869A)),
+  Future<void> _showOfficeQr() async {
+    try {
+      final qrImage = await QrPainter(
+        data: companyQrPayload,
+        version: QrVersions.auto,
+        gapless: true,
+      ).toImageData(720, format: ui.ImageByteFormat.png);
+      if (!mounted) return;
+      if (qrImage == null) throw Exception('Không tạo được ảnh QR công ty.');
+      final qrBytes = qrImage.buffer.asUint8List();
+
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          icon: const Icon(Icons.qr_code_2_rounded, color: blue, size: 30),
+          title: const Text('Mã QR công ty cố định'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(18),
+                  border: Border.all(color: const Color(0xFFE8EDF4)),
+                ),
+                child: Image.memory(
+                  qrBytes,
+                  width: 230,
+                  height: 230,
+                  filterQuality: FilterQuality.none,
+                  gaplessPlayback: true,
+                ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'Nhân viên quét mã này để chấm công. Vị trí GPS vẫn phải nằm trong vùng văn phòng.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  fontSize: 13,
+                  color: Color(0xFF78869A),
+                  height: 1.4,
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            FilledButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Đóng'),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng'),
-          ),
-        ],
-      ),
-    );
+      );
+    } catch (error) {
+      if (mounted) {
+        _notice(
+          'Không mở được mã QR công ty: ${error.toString().replaceFirst('Exception: ', '')}',
+        );
+      }
+    }
   }
 
   Future<Position> _getCurrentPosition() async {
