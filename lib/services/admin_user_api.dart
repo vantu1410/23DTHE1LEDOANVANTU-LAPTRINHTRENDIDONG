@@ -71,12 +71,23 @@ class AdminUserApi {
   void _check(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final body = utf8.decode(response.bodyBytes);
-      var message = 'API lỗi ${response.statusCode}';
+      var message = switch (response.statusCode) {
+        401 =>
+          'Phiên đăng nhập admin đã hết hạn. Hãy đăng xuất rồi đăng nhập lại.',
+        403 => 'Tài khoản hiện tại không có quyền quản trị.',
+        404 => 'Tài khoản không còn tồn tại. Hãy tải lại danh sách.',
+        _ => 'API lỗi ${response.statusCode}',
+      };
       try {
         final decoded = jsonDecode(body) as Map<String, dynamic>;
-        message = (decoded['message'] ?? message).toString();
+        message = (decoded['message'] ?? decoded['detail'] ?? message)
+            .toString();
       } catch (_) {
-        if (body.isNotEmpty) message = body;
+        if (response.statusCode != 401 &&
+            response.statusCode != 403 &&
+            body.isNotEmpty) {
+          message = body;
+        }
       }
       throw Exception(message);
     }

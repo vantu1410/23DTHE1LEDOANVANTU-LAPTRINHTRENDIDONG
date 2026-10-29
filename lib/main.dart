@@ -140,6 +140,8 @@ class _LoginPageState extends State<LoginPage> {
 
       String displayRole;
       String displayName;
+      String displayUsername = user.text.trim();
+      int? displayUserId;
       String? accessToken;
       if (_authApi == null) {
         if (otp.text.trim() != '123456') {
@@ -158,6 +160,8 @@ class _LoginPageState extends State<LoginPage> {
             ? 'Quản trị viên'
             : 'Nhân viên';
         displayName = session.fullName;
+        displayUsername = session.username;
+        displayUserId = session.userId;
         accessToken = session.token;
       }
       if (!mounted) return;
@@ -166,6 +170,8 @@ class _LoginPageState extends State<LoginPage> {
           builder: (_) => HomePage(
             role: displayRole,
             name: displayName,
+            username: displayUsername,
+            userId: displayUserId,
             accessToken: accessToken,
           ),
         ),
@@ -417,10 +423,14 @@ class HomePage extends StatefulWidget {
     super.key,
     required this.role,
     required this.name,
+    required this.username,
+    this.userId,
     this.accessToken,
   });
   final String role;
   final String name;
+  final String username;
+  final int? userId;
   final String? accessToken;
   @override
   State<HomePage> createState() => _HomePageState();
@@ -1424,8 +1434,11 @@ class _HomePageState extends State<HomePage> {
     }
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) =>
-            AdminUsersPage(api: AdminUserApi(_apiBaseUrl, widget.accessToken!)),
+        builder: (_) => AdminUsersPage(
+          api: AdminUserApi(_apiBaseUrl, widget.accessToken!),
+          currentUserId: widget.userId,
+          currentUsername: widget.username,
+        ),
       ),
     );
   }
@@ -2072,8 +2085,15 @@ class _QrScanPageState extends State<QrScanPage> {
 }
 
 class AdminUsersPage extends StatefulWidget {
-  const AdminUsersPage({super.key, required this.api});
+  const AdminUsersPage({
+    super.key,
+    required this.api,
+    required this.currentUsername,
+    this.currentUserId,
+  });
   final AdminUserApi api;
+  final int? currentUserId;
+  final String currentUsername;
 
   @override
   State<AdminUsersPage> createState() => _AdminUsersPageState();
@@ -2083,6 +2103,26 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
   List<AdminUser> users = [];
   bool loading = true;
   String? error;
+  String query = '';
+  String roleFilter = 'Tất cả';
+  final Set<int> deletingIds = {};
+
+  int get _adminCount =>
+      users.where((user) => user.role.toLowerCase() == 'admin').length;
+
+  List<AdminUser> get _visibleUsers => users.where((user) {
+    final isAdmin = user.role.toLowerCase() == 'admin';
+    final matchesRole =
+        roleFilter == 'Tất cả' ||
+        (roleFilter == 'Quản trị viên' ? isAdmin : !isAdmin);
+    final normalizedQuery = query.trim().toLowerCase();
+    final matchesQuery =
+        normalizedQuery.isEmpty ||
+        user.fullName.toLowerCase().contains(normalizedQuery) ||
+        user.username.toLowerCase().contains(normalizedQuery) ||
+        user.email.toLowerCase().contains(normalizedQuery);
+    return matchesRole && matchesQuery;
+  }).toList();
 
   @override
   void initState() {
@@ -2112,6 +2152,17 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
   }
 
   Future<void> _delete(AdminUser user) async {
+    final isCurrentUser =
+        widget.currentUserId == user.id ||
+        widget.currentUsername.toLowerCase() == user.username.toLowerCase();
+    if (isCurrentUser) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Bạn không thể xóa tài khoản đang đăng nhập.'),
+        ),
+      );
+      return;
+    }
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -2132,16 +2183,24 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
       ),
     );
     if (confirmed != true) return;
+    setState(() => deletingIds.add(user.id));
     try {
       await widget.api.delete(user.id);
       if (!mounted) return;
-      setState(() => users.removeWhere((item) => item.id == user.id));
+      setState(() {
+        users.removeWhere((item) => item.id == user.id);
+        deletingIds.remove(user.id);
+      });
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Đã xóa tài khoản.')));
     } catch (e) {
       if (!mounted) return;
+      setState(() => deletingIds.remove(user.id));
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+        SnackBar(
+          content: Text(e.toString().replaceFirst('Exception: ', '')),
+          behavior: SnackBarBehavior.floating,
+        ),
       );
     }
   }
@@ -2160,71 +2219,272 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
         ),
       ],
     ),
-    body: loading
-        ? const Center(child: CircularProgressIndicator())
-        : error != null
-        ? Center(
-            child: Padding(
-              padding: const EdgeInsets.all(24),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.cloud_off_outlined, size: 42, color: blue),
-                  const SizedBox(height: 12),
-                  Text(error!, textAlign: TextAlign.center),
-                  const SizedBox(height: 12),
-                  FilledButton.icon(
-                    onPressed: _loadUsers,
-                    icon: const Icon(Icons.refresh),
-                    label: const Text('Thử lại'),
-                  ),
-                ],
+    body: Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 14),
+          child: Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(18),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [navy, Color(0xFF285B91)],
+                begin: Alignment.topLeft,
+                end: Alignment.bottomRight,
               ),
+              borderRadius: BorderRadius.circular(22),
             ),
-          )
-        : users.isEmpty
-        ? const Center(child: Text('Chưa có tài khoản nào.'))
-        : RefreshIndicator(
-            onRefresh: _loadUsers,
-            child: ListView.separated(
-              padding: const EdgeInsets.all(16),
-              itemCount: users.length,
-              separatorBuilder: (_, _) => const SizedBox(height: 8),
-              itemBuilder: (context, index) {
-                final user = users[index];
-                final isAdmin = user.role.toLowerCase() == 'admin';
-                return Card(
-                  color: Colors.white,
-                  child: ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: isAdmin
-                          ? const Color(0xFFE9EFFF)
-                          : const Color(0xFFE7F7F1),
-                      child: Icon(
-                        isAdmin ? Icons.admin_panel_settings : Icons.person,
-                        color: isAdmin ? blue : green,
-                      ),
-                    ),
-                    title: Text(
-                      user.fullName,
-                      style: const TextStyle(fontWeight: FontWeight.w700),
-                    ),
-                    subtitle: Text(
-                      '@${user.username}\n${user.email}\n${isAdmin ? 'Quản trị viên' : 'Nhân viên'} · ${user.emailVerified ? 'Đã xác nhận email' : 'Chưa xác nhận email'}',
-                    ),
-                    isThreeLine: true,
-                    trailing: IconButton(
-                      tooltip: 'Xóa tài khoản',
-                      onPressed: () => _delete(user),
-                      icon: const Icon(
-                        Icons.delete_outline,
-                        color: Color(0xFFD65353),
-                      ),
-                    ),
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white.withValues(alpha: .14),
+                    borderRadius: BorderRadius.circular(16),
                   ),
-                );
-              },
+                  child: const Icon(
+                    Icons.manage_accounts_rounded,
+                    color: Colors.white,
+                    size: 28,
+                  ),
+                ),
+                const SizedBox(width: 14),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text(
+                        'Tài khoản hệ thống',
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 17,
+                          fontWeight: FontWeight.w800,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        '${users.length} tài khoản · $_adminCount quản trị viên',
+                        style: const TextStyle(
+                          color: Color(0xFFD3E3F5),
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
           ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: TextField(
+            onChanged: (value) => setState(() => query = value),
+            decoration: InputDecoration(
+              hintText: 'Tìm theo tên, username hoặc email',
+              prefixIcon: const Icon(Icons.search_rounded),
+              suffixIcon: query.isEmpty
+                  ? null
+                  : IconButton(
+                      onPressed: () => setState(() => query = ''),
+                      icon: const Icon(Icons.close_rounded),
+                    ),
+            ),
+          ),
+        ),
+        SizedBox(
+          height: 54,
+          child: ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+            children: ['Tất cả', 'Nhân viên', 'Quản trị viên']
+                .map(
+                  (label) => Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: ChoiceChip(
+                      label: Text(label),
+                      selected: roleFilter == label,
+                      onSelected: (_) => setState(() => roleFilter = label),
+                    ),
+                  ),
+                )
+                .toList(),
+          ),
+        ),
+        Expanded(
+          child: loading
+              ? const Center(child: CircularProgressIndicator())
+              : error != null
+              ? Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(
+                          Icons.cloud_off_outlined,
+                          size: 42,
+                          color: blue,
+                        ),
+                        const SizedBox(height: 12),
+                        Text(error!, textAlign: TextAlign.center),
+                        const SizedBox(height: 12),
+                        FilledButton.icon(
+                          onPressed: _loadUsers,
+                          icon: const Icon(Icons.refresh),
+                          label: const Text('Thử lại'),
+                        ),
+                      ],
+                    ),
+                  ),
+                )
+              : _visibleUsers.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(
+                        Icons.person_search_rounded,
+                        color: Color(0xFF9AA6B5),
+                        size: 44,
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        users.isEmpty
+                            ? 'Chưa có tài khoản nào.'
+                            : 'Không tìm thấy tài khoản phù hợp.',
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadUsers,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.fromLTRB(16, 2, 16, 24),
+                    itemCount: _visibleUsers.length,
+                    separatorBuilder: (_, _) => const SizedBox(height: 9),
+                    itemBuilder: (context, index) {
+                      final user = _visibleUsers[index];
+                      final isAdmin = user.role.toLowerCase() == 'admin';
+                      final isCurrentUser =
+                          widget.currentUserId == user.id ||
+                          widget.currentUsername.toLowerCase() ==
+                              user.username.toLowerCase();
+                      final isDeleting = deletingIds.contains(user.id);
+                      return Card(
+                        elevation: 0,
+                        color: Colors.white,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(18),
+                          side: const BorderSide(color: Color(0xFFE9EEF5)),
+                        ),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 5,
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                            ),
+                            leading: CircleAvatar(
+                              radius: 24,
+                              backgroundColor: isAdmin
+                                  ? const Color(0xFFE9EFFF)
+                                  : const Color(0xFFE7F7F1),
+                              child: Icon(
+                                isAdmin
+                                    ? Icons.admin_panel_settings_rounded
+                                    : Icons.person_rounded,
+                                color: isAdmin ? blue : green,
+                              ),
+                            ),
+                            title: Text(
+                              user.fullName,
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                            subtitle: Padding(
+                              padding: const EdgeInsets.only(top: 5),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    '@${user.username} · ${user.email}',
+                                    maxLines: 2,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                  const SizedBox(height: 7),
+                                  Wrap(
+                                    spacing: 6,
+                                    runSpacing: 4,
+                                    children: [
+                                      _accountTag(
+                                        isAdmin ? 'Quản trị viên' : 'Nhân viên',
+                                        isAdmin ? blue : green,
+                                      ),
+                                      _accountTag(
+                                        user.emailVerified
+                                            ? 'Email đã xác nhận'
+                                            : 'Chưa xác nhận',
+                                        user.emailVerified
+                                            ? green
+                                            : const Color(0xFFB7791F),
+                                      ),
+                                      if (isCurrentUser)
+                                        _accountTag('Bạn', navy),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                            ),
+                            isThreeLine: true,
+                            trailing: isCurrentUser
+                                ? const Tooltip(
+                                    message: 'Không thể xóa tài khoản đang đăng nhập',
+                                    child: Icon(
+                                      Icons.lock_outline_rounded,
+                                      color: Color(0xFF9AA6B5),
+                                    ),
+                                  )
+                                : IconButton(
+                                    tooltip: 'Xóa tài khoản',
+                                    onPressed: isDeleting
+                                        ? null
+                                        : () => _delete(user),
+                                    icon: isDeleting
+                                        ? const SizedBox.square(
+                                            dimension: 20,
+                                            child: CircularProgressIndicator(
+                                              strokeWidth: 2,
+                                            ),
+                                          )
+                                        : const Icon(
+                                            Icons.delete_outline_rounded,
+                                            color: Color(0xFFD65353),
+                                          ),
+                                  ),
+                          ),
+                        ),
+                      );
+                    },
+                  ),
+                ),
+        ),
+      ],
+    ),
+  );
+
+  Widget _accountTag(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .1),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 10, fontWeight: FontWeight.w700),
+    ),
   );
 }

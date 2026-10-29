@@ -4,6 +4,7 @@ using LEDOANVANTU2.Api.Data;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace LEDOANVANTU2.Api.Controllers;
 
@@ -33,14 +34,16 @@ public sealed class AdminUsersController(AppDbContext db) : ControllerBase
     [HttpDelete("{id:int}")]
     public async Task<IActionResult> DeleteUser(int id, CancellationToken ct)
     {
-        var currentUserIdValue = User.FindFirstValue(JwtRegisteredClaimNames.Sub)
-            ?? User.FindFirstValue(ClaimTypes.NameIdentifier);
+        var currentUserIdValue = User.FindFirstValue(ClaimTypes.NameIdentifier)
+            ?? User.FindFirstValue(JwtRegisteredClaimNames.Sub)
+            ?? User.FindFirstValue("sub");
         if (!int.TryParse(currentUserIdValue, out var currentUserId))
             return Unauthorized(new { message = "Token không có mã người dùng hợp lệ." });
         if (id == currentUserId)
             return BadRequest(new { message = "Không thể xóa tài khoản admin đang đăng nhập." });
 
-        var user = await db.Users.FindAsync([id], ct);
+        await using var transaction = await db.Database.BeginTransactionAsync(ct);
+        var user = await db.Users.SingleOrDefaultAsync(x => x.Id == id, ct);
         if (user is null) return NotFound(new { message = "Không tìm thấy tài khoản." });
 
         if (user.Role == "Admin")
@@ -50,12 +53,18 @@ public sealed class AdminUsersController(AppDbContext db) : ControllerBase
                 return Conflict(new { message = "Không thể xóa admin cuối cùng của hệ thống." });
         }
 
-        var attendanceRecords = await db.AttendanceRecords
-            .Where(x => x.UserId == id)
-            .ToListAsync(ct);
-        db.AttendanceRecords.RemoveRange(attendanceRecords);
+        await db.AttendanceRecords.Where(x => x.UserId == id).ExecuteDeleteAsync(ct);
         db.Users.Remove(user);
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            await transaction.RollbackAsync(ct);
+            return Conflict(new { message = "Không thể xóa tài khoản vì dữ liệu liên quan vẫn đang được sử dụng." });
+        }
         return NoContent();
     }
 }

@@ -40,6 +40,8 @@ class AuthApi {
     return AuthSession(
       token: (result['accessToken'] ?? '').toString(),
       fullName: (user['fullName'] ?? username).toString(),
+      username: (user['username'] ?? username).toString(),
+      userId: (user['id'] as num?)?.toInt(),
       role: (user['role'] ?? 'Employee').toString(),
     );
   }
@@ -75,9 +77,13 @@ class AuthSession {
   const AuthSession({
     required this.token,
     required this.fullName,
+    required this.username,
+    required this.userId,
     required this.role,
   });
   final String token;
   final String fullName;
+  final String username;
+  final int? userId;
   final String role;
 }
