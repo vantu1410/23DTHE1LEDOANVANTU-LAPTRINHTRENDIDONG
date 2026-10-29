@@ -19,6 +19,7 @@ class AttendanceApi {
     required String type,
     required double latitude,
     required double longitude,
+    required double? accuracyMeters,
     required String qrToken,
   }) async {
     final response = await _client
@@ -29,6 +30,7 @@ class AttendanceApi {
             'type': type,
             'latitude': latitude,
             'longitude': longitude,
+            'accuracyMeters': accuracyMeters,
             'qrToken': qrToken,
           }),
         )
@@ -45,14 +47,39 @@ class AttendanceApi {
     if (decoded is! List) return [];
     return decoded.whereType<Map<String, dynamic>>().map((json) {
       final type = (json['type'] ?? '').toString();
-      final distance = (json['distanceFromOfficeMeters'] as num?)?.round();
+      final distance = (json['distanceFromOfficeMeters'] as num?)?.toDouble();
+      final accuracy = (json['accuracyMeters'] as num?)?.toDouble();
+      final latitude = (json['latitude'] as num?)?.toDouble();
+      final longitude = (json['longitude'] as num?)?.toDouble();
+      final coordinateText = latitude == null || longitude == null
+          ? 'GPS'
+          : '${latitude.toStringAsFixed(6)}, ${longitude.toStringAsFixed(6)}';
       return PunchRecord(
         type == 'checkIn' ? 'Chấm công vào ca' : 'Chấm công tan ca',
         DateTime.parse(json['recordedAtUtc'].toString()).toLocal(),
-        distance == null ? 'Văn phòng' : 'Văn phòng · ${distance}m',
-        (json['verification'] ?? 'GPS').toString(),
+        distance == null
+            ? 'Khoảng cách chưa có dữ liệu'
+            : 'Cách văn phòng ${distance.toStringAsFixed(1)}m',
+        accuracy == null
+            ? '$coordinateText · GPS'
+            : '$coordinateText · sai số ±${accuracy.toStringAsFixed(1)}m',
+        recordId: (json['id'] as num?)?.toInt(),
+        userId: (json['userId'] as num?)?.toInt(),
+        employeeName: (json['fullName'] ?? '').toString(),
+        username: (json['username'] ?? '').toString(),
+        latitude: latitude,
+        longitude: longitude,
+        accuracyMeters: accuracy,
+        distanceFromOfficeMeters: distance,
       );
     }).toList();
+  }
+
+  Future<void> cancelRecord(int id) async {
+    final response = await _client
+        .delete(_uri.resolve('api/AttendanceApi/$id'), headers: _headers)
+        .timeout(const Duration(seconds: 90));
+    _check(response);
   }
 
   Map<String, String> get _headers => {

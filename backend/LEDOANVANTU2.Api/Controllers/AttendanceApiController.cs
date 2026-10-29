@@ -16,9 +16,25 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
     public async Task<IActionResult> GetHistory(CancellationToken ct)
     {
         var userId = CurrentUserId();
-        var query = db.AttendanceRecords.AsNoTracking();
-        if (!User.IsInRole("Admin")) query = query.Where(x => x.UserId == userId);
-        return Ok(await query.OrderByDescending(x => x.RecordedAtUtc).Take(200).ToListAsync(ct));
+        var isAdmin = User.IsInRole("Admin");
+        var query =
+            from record in db.AttendanceRecords.AsNoTracking()
+            join user in db.Users.AsNoTracking() on record.UserId equals user.Id
+            where isAdmin || record.UserId == userId
+            orderby record.RecordedAtUtc descending
+            select new AttendanceHistoryDto(
+                record.Id,
+                record.UserId,
+                user.FullName,
+                user.Username,
+                record.Type,
+                record.RecordedAtUtc,
+                record.DistanceFromOfficeMeters,
+                record.Latitude,
+                record.Longitude,
+                record.AccuracyMeters,
+                record.Verification);
+        return Ok(await query.Take(200).ToListAsync(ct));
     }
 
     [HttpPost]
@@ -27,13 +43,13 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
         const string expectedQr = "TUTIME:OFFICE:23DTHE1LEDOANVANTU-GROUP8";
         if (!string.Equals(request.QrToken, expectedQr, StringComparison.Ordinal))
             return BadRequest(new { message = "QR không hợp lệ. Hãy quét đúng mã QR cố định của công ty." });
+        if (!double.IsFinite(request.Latitude) || request.Latitude is < -90 or > 90 ||
+            !double.IsFinite(request.Longitude) || request.Longitude is < -180 or > 180)
+            return BadRequest(new { message = "Tọa độ GPS không hợp lệ. Hãy bật vị trí chính xác rồi thử lại." });
 
         var latitude = configuration.GetValue<double>("Office:Latitude");
         var longitude = configuration.GetValue<double>("Office:Longitude");
-        var radius = configuration.GetValue<double>("Office:RadiusMeters", 150);
         var distance = DistanceMeters(request.Latitude, request.Longitude, latitude, longitude);
-        if (distance > radius)
-            return StatusCode(StatusCodes.Status403Forbidden, new { message = $"Ngoài vùng chấm công ({distance:0}m; giới hạn {radius:0}m)." });
 
         var record = new AttendanceRecord
         {
@@ -41,11 +57,29 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
             Type = request.Type,
             RecordedAtUtc = DateTimeOffset.UtcNow,
             DistanceFromOfficeMeters = Math.Round(distance, 1),
+            Latitude = request.Latitude,
+            Longitude = request.Longitude,
+            AccuracyMeters = request.AccuracyMeters is > 0 and var accuracy && double.IsFinite(accuracy)
+                ? accuracy
+                : null,
             Verification = "QR công ty + GPS"
         };
         db.AttendanceRecords.Add(record);
         await db.SaveChangesAsync(ct);
         return CreatedAtAction(nameof(GetHistory), new { id = record.Id }, record);
+    }
+
+    [HttpDelete("{id:int}")]
+    [Authorize(Roles = "Admin")]
+    public async Task<IActionResult> CancelAttendance(int id, CancellationToken ct)
+    {
+        var record = await db.AttendanceRecords.FindAsync([id], ct);
+        if (record is null)
+            return NotFound(new { message = "Không tìm thấy lượt chấm công." });
+
+        db.AttendanceRecords.Remove(record);
+        await db.SaveChangesAsync(ct);
+        return NoContent();
     }
 
     private int CurrentUserId()
@@ -66,4 +100,22 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
     }
 }
 
-public sealed record AttendanceRequest(string Type, double Latitude, double Longitude, string QrToken);
+public sealed record AttendanceRequest(
+    string Type,
+    double Latitude,
+    double Longitude,
+    string QrToken,
+    double? AccuracyMeters = null);
+
+public sealed record AttendanceHistoryDto(
+    int Id,
+    int UserId,
+    string FullName,
+    string Username,
+    string Type,
+    DateTimeOffset RecordedAtUtc,
+    double DistanceFromOfficeMeters,
+    double Latitude,
+    double Longitude,
+    double? AccuracyMeters,
+    string Verification);

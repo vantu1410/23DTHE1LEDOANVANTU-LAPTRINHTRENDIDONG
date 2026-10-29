@@ -54,10 +54,12 @@ var app = builder.Build();
 await using (var scope = app.Services.CreateAsyncScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    if (provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase))
+    var isPostgres = provider.Equals("Postgres", StringComparison.OrdinalIgnoreCase);
+    if (isPostgres)
         await db.Database.EnsureCreatedAsync();
     else
         await db.Database.MigrateAsync();
+    await EnsureAttendanceLocationColumnsAsync(db, isPostgres);
     await BootstrapAdminAsync(scope.ServiceProvider, builder.Configuration);
 }
 app.UseSwagger();
@@ -84,6 +86,29 @@ static string ParsePostgresUrl(string value)
         SslMode = Npgsql.SslMode.Require
     };
     return builder.ConnectionString;
+}
+
+static async Task EnsureAttendanceLocationColumnsAsync(AppDbContext db, bool isPostgres)
+{
+    if (isPostgres)
+    {
+        await db.Database.ExecuteSqlRawAsync("""
+            ALTER TABLE "AttendanceRecords"
+            ADD COLUMN IF NOT EXISTS "Latitude" double precision NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS "Longitude" double precision NOT NULL DEFAULT 0,
+            ADD COLUMN IF NOT EXISTS "AccuracyMeters" double precision NULL;
+            """);
+        return;
+    }
+
+    await db.Database.ExecuteSqlRawAsync("""
+        IF COL_LENGTH(N'dbo.AttendanceRecords', N'Latitude') IS NULL
+            ALTER TABLE [dbo].[AttendanceRecords] ADD [Latitude] float NOT NULL CONSTRAINT [DF_AttendanceRecords_Latitude] DEFAULT (0);
+        IF COL_LENGTH(N'dbo.AttendanceRecords', N'Longitude') IS NULL
+            ALTER TABLE [dbo].[AttendanceRecords] ADD [Longitude] float NOT NULL CONSTRAINT [DF_AttendanceRecords_Longitude] DEFAULT (0);
+        IF COL_LENGTH(N'dbo.AttendanceRecords', N'AccuracyMeters') IS NULL
+            ALTER TABLE [dbo].[AttendanceRecords] ADD [AccuracyMeters] float NULL;
+        """);
 }
 
 static async Task BootstrapAdminAsync(IServiceProvider services, IConfiguration configuration)

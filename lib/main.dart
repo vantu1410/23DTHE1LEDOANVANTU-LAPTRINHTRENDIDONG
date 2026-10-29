@@ -25,14 +25,18 @@ const blue = Color(0xFF3978F6);
 const canvas = Color(0xFFF4F7FB);
 const green = Color(0xFF18A979);
 const companyQrPayload = 'TUTIME:OFFICE:23DTHE1LEDOANVANTU-GROUP8';
-final officeLatitude = double.parse(
+double _configuredNumber(String value, double fallback) {
+  final normalized = value.trim().replaceFirst(RegExp(r'[\\/]+$'), '');
+  return double.tryParse(normalized) ?? fallback;
+}
+
+final officeLatitude = _configuredNumber(
   const String.fromEnvironment('OFFICE_LAT', defaultValue: '10.7769'),
+  10.7769,
 );
-final officeLongitude = double.parse(
+final officeLongitude = _configuredNumber(
   const String.fromEnvironment('OFFICE_LNG', defaultValue: '106.7009'),
-);
-final officeRadiusMeters = double.parse(
-  const String.fromEnvironment('OFFICE_RADIUS_M', defaultValue: '150'),
+  106.7009,
 );
 
 class ChamCongApp extends StatelessWidget {
@@ -442,6 +446,7 @@ class _HomePageState extends State<HomePage> {
     defaultValue: 'https://ledoanvantu2-api.onrender.com',
   );
   int tab = 0;
+  bool showingAdminAttendance = false;
   late final EmployeeApi? _employeeApi;
   late final AttendanceApi? _attendanceApi;
   String? _apiError;
@@ -508,7 +513,9 @@ class _HomePageState extends State<HomePage> {
   Widget build(BuildContext context) {
     final pages = [
       _dashboard(),
-      isAdmin ? _employees() : _history(),
+      isAdmin
+          ? (showingAdminAttendance ? _adminAttendance() : _employees())
+          : _history(),
       _profile(),
     ];
     return Scaffold(
@@ -529,7 +536,9 @@ class _HomePageState extends State<HomePage> {
             icon: Icon(
               isAdmin ? Icons.groups_2_outlined : Icons.receipt_long_outlined,
             ),
-            label: isAdmin ? 'Nhân viên' : 'Lịch sử',
+            label: isAdmin
+                ? (showingAdminAttendance ? 'Chấm công' : 'Nhân viên')
+                : 'Lịch sử',
           ),
           const NavigationDestination(
             icon: Icon(Icons.person_outline),
@@ -677,9 +686,27 @@ class _HomePageState extends State<HomePage> {
         ...employees.take(2).map(_employeeTile),
       ],
       const SizedBox(height: 18),
-      const Text(
-        'Hoạt động gần đây',
-        style: TextStyle(fontSize: 17, fontWeight: FontWeight.w800, color: ink),
+      Row(
+        children: [
+          const Expanded(
+            child: Text(
+              'Hoạt động gần đây',
+              style: TextStyle(
+                fontSize: 17,
+                fontWeight: FontWeight.w800,
+                color: ink,
+              ),
+            ),
+          ),
+          if (isAdmin)
+            TextButton(
+              onPressed: () => setState(() {
+                showingAdminAttendance = true;
+                tab = 1;
+              }),
+              child: const Text('Xem tất cả'),
+            ),
+        ],
       ),
       const SizedBox(height: 8),
       if (records.isEmpty)
@@ -975,7 +1002,7 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               Text(
-                'Văn phòng demo · Bán kính ${officeRadiusMeters.round()}m',
+                'Lưu khoảng cách, tọa độ và sai số GPS',
                 style: TextStyle(color: Color(0xFF75859B), fontSize: 11),
               ),
             ],
@@ -1147,6 +1174,8 @@ class _HomePageState extends State<HomePage> {
         'Quản lý hồ sơ và tình trạng làm việc',
         style: TextStyle(color: Color(0xFF8090A4)),
       ),
+      const SizedBox(height: 14),
+      _adminSectionToggle(),
       const SizedBox(height: 18),
       Row(
         children: [
@@ -1223,6 +1252,223 @@ class _HomePageState extends State<HomePage> {
       ...employees.map(_employeeTile),
     ],
   );
+
+  Widget _adminSectionToggle() => SegmentedButton<bool>(
+    segments: const [
+      ButtonSegment(
+        value: false,
+        icon: Icon(Icons.groups_2_outlined),
+        label: Text('Nhân viên'),
+      ),
+      ButtonSegment(
+        value: true,
+        icon: Icon(Icons.receipt_long_outlined),
+        label: Text('Chấm công'),
+      ),
+    ],
+    selected: {showingAdminAttendance},
+    onSelectionChanged: (selection) => setState(() {
+      showingAdminAttendance = selection.first;
+      tab = 1;
+      if (showingAdminAttendance) _refreshHistory();
+    }),
+  );
+
+  Widget _adminAttendance() => RefreshIndicator(
+    onRefresh: _refreshHistory,
+    child: ListView(
+      padding: const EdgeInsets.fromLTRB(20, 20, 20, 28),
+      children: [
+        Row(
+          children: [
+            const Expanded(
+              child: Text(
+                'Lịch sử chấm công',
+                style: TextStyle(
+                  fontSize: 24,
+                  color: ink,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Tải lại',
+              onPressed: _refreshHistory,
+              icon: const Icon(Icons.refresh_rounded, color: blue),
+            ),
+          ],
+        ),
+        const SizedBox(height: 5),
+        const Text(
+          'Không chặn theo bán kính. Lượt xa hoặc GPS thiếu chính xác được đánh dấu để admin đối soát và hủy nếu cần.',
+          style: TextStyle(color: Color(0xFF8090A4)),
+        ),
+        const SizedBox(height: 14),
+        _adminSectionToggle(),
+        const SizedBox(height: 14),
+        Container(
+          padding: const EdgeInsets.all(14),
+          decoration: BoxDecoration(
+            color: const Color(0xFFEAF1FF),
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Text(
+            '${records.length} lượt gần nhất · Không chặn theo bán kính · Nhấn xóa để hủy một lượt.',
+            style: const TextStyle(
+              color: navy,
+              fontSize: 12,
+              fontWeight: FontWeight.w700,
+            ),
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (records.isEmpty)
+          _emptyActivity()
+        else
+          ...records.map(_adminAttendanceTile),
+      ],
+    ),
+  );
+
+  Widget _adminAttendanceTile(PunchRecord record) => Container(
+    margin: const EdgeInsets.only(bottom: 9),
+    padding: const EdgeInsets.all(15),
+    decoration: BoxDecoration(
+      color: Colors.white,
+      borderRadius: BorderRadius.circular(17),
+      border: Border.all(color: const Color(0xFFE8EDF4)),
+    ),
+    child: Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    record.employeeName?.isNotEmpty == true
+                        ? record.employeeName!
+                        : 'Nhân viên ${record.username ?? ''}',
+                    style: const TextStyle(
+                      color: ink,
+                      fontWeight: FontWeight.w800,
+                    ),
+                  ),
+                  if (record.username?.isNotEmpty == true)
+                    Text(
+                      '@${record.username}',
+                      style: const TextStyle(
+                        color: Color(0xFF8090A4),
+                        fontSize: 12,
+                      ),
+                    ),
+                ],
+              ),
+            ),
+            IconButton(
+              tooltip: 'Hủy lượt chấm công',
+              onPressed: record.recordId == null
+                  ? null
+                  : () => _cancelAttendance(record),
+              icon: const Icon(
+                Icons.delete_outline_rounded,
+                color: Color(0xFFD65353),
+              ),
+            ),
+          ],
+        ),
+        Text(
+          '${record.action} · ${record.time.day.toString().padLeft(2, '0')}/${record.time.month.toString().padLeft(2, '0')}/${record.time.year} ${_clock(record.time)}',
+          style: const TextStyle(color: Color(0xFF526176), fontSize: 12),
+        ),
+        const SizedBox(height: 9),
+        Wrap(
+          spacing: 7,
+          runSpacing: 7,
+          children: [
+            _recordTag(
+              record.distanceFromOfficeMeters == null
+                  ? record.place
+                  : '${record.distanceFromOfficeMeters!.toStringAsFixed(1)} m từ văn phòng',
+              blue,
+            ),
+            _recordTag(
+              record.accuracyMeters == null
+                  ? 'Sai số GPS chưa có'
+                  : 'Sai số GPS ±${record.accuracyMeters!.toStringAsFixed(1)} m',
+              record.accuracyMeters != null && record.accuracyMeters! <= 20
+                  ? green
+                  : const Color(0xFFB7791F),
+            ),
+            if ((record.distanceFromOfficeMeters ?? 0) > 150 ||
+                record.accuracyMeters == null ||
+                record.accuracyMeters! > 25)
+              _recordTag('Cần admin đối soát', const Color(0xFFB7791F)),
+          ],
+        ),
+        if (record.latitude != null && record.longitude != null) ...[
+          const SizedBox(height: 8),
+          SelectableText(
+            'GPS: ${record.latitude!.toStringAsFixed(6)}, ${record.longitude!.toStringAsFixed(6)}',
+            style: const TextStyle(color: Color(0xFF78869A), fontSize: 11),
+          ),
+        ],
+      ],
+    ),
+  );
+
+  Widget _recordTag(String label, Color color) => Container(
+    padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
+    decoration: BoxDecoration(
+      color: color.withValues(alpha: .1),
+      borderRadius: BorderRadius.circular(20),
+    ),
+    child: Text(
+      label,
+      style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w700),
+    ),
+  );
+
+  Future<void> _cancelAttendance(PunchRecord record) async {
+    if (_attendanceApi == null || record.recordId == null) return;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Hủy lượt chấm công?'),
+        content: Text(
+          'Hủy ${record.action.toLowerCase()} của ${record.employeeName ?? record.username ?? 'nhân viên'}? Thao tác này xóa lượt khỏi lịch sử.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Giữ lại'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Hủy lượt'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      final api = _attendanceApi;
+      final recordId = record.recordId;
+      await api.cancelRecord(recordId!);
+      if (!mounted) return;
+      setState(
+        () => records.removeWhere((item) => item.recordId == record.recordId),
+      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(const SnackBar(content: Text('Đã hủy lượt chấm công.')));
+    } catch (error) {
+      if (mounted) _notice(error.toString().replaceFirst('Exception: ', ''));
+    }
+  }
 
   Widget _employeeTile(Employee e) => Container(
     margin: const EdgeInsets.only(bottom: 9),
@@ -1488,7 +1734,7 @@ class _HomePageState extends State<HomePage> {
     builder: (ctx) => AlertDialog(
       title: const Text('Hướng dẫn nhanh'),
       content: const Text(
-        'Chấm công: quét QR công ty → xác nhận vị trí GPS → gửi bản ghi. Admin quản lý nhân viên và tài khoản ở tab Tài khoản. Mục Đo áp suất không khí có thể chạy bằng cảm biến ảo trên Android Emulator.',
+        'Chấm công: quét QR công ty → ghi nhận GPS và khoảng cách tới văn phòng → gửi bản ghi. Admin xem, kiểm tra độ chính xác và hủy lượt chấm công ở mục Chấm công. Mục Đo áp suất không khí có thể chạy bằng cảm biến ảo trên Android Emulator.',
       ),
       actions: [
         TextButton(
@@ -1520,10 +1766,12 @@ class _HomePageState extends State<HomePage> {
         officeLatitude,
         officeLongitude,
       );
-      if (distance > officeRadiusMeters) {
-        await _showGpsMismatch(position, distance);
-        return;
-      }
+      final double? accuracy =
+          position.accuracy.isFinite && position.accuracy > 0
+          ? position.accuracy
+          : null;
+      final coordinates =
+          '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
 
       final action = checkedIn ? 'checkOut' : 'checkIn';
       if (_attendanceApi != null) {
@@ -1531,6 +1779,7 @@ class _HomePageState extends State<HomePage> {
           type: action,
           latitude: position.latitude,
           longitude: position.longitude,
+          accuracyMeters: accuracy,
           qrToken: qr,
         );
       }
@@ -1543,8 +1792,8 @@ class _HomePageState extends State<HomePage> {
             PunchRecord(
               'Chấm công vào ca',
               DateTime.now(),
-              'Văn phòng · ${distance.round()}m',
-              'QR công ty + GPS',
+              'Cách VP ${distance.toStringAsFixed(1)}m',
+              '${accuracy == null ? 'GPS chưa có sai số' : 'GPS ±${accuracy.toStringAsFixed(1)}m'} · $coordinates',
             ),
           );
         } else {
@@ -1553,64 +1802,20 @@ class _HomePageState extends State<HomePage> {
             PunchRecord(
               'Chấm công tan ca',
               DateTime.now(),
-              'Văn phòng · ${distance.round()}m',
-              'QR công ty + GPS',
+              'Cách VP ${distance.toStringAsFixed(1)}m',
+              '${accuracy == null ? 'GPS chưa có sai số' : 'GPS ±${accuracy.toStringAsFixed(1)}m'} · $coordinates',
             ),
           );
         }
       });
       if (_attendanceApi != null) await _refreshHistory();
-      _notice('Đã xác minh QR công ty và vị trí. Chấm công thành công.');
+      _notice(
+        'Đã lưu vị trí GPS${accuracy == null ? '' : ' với sai số ±${accuracy.toStringAsFixed(1)}m'} và khoảng cách ${distance.toStringAsFixed(1)}m tới văn phòng. Chấm công thành công.',
+      );
     } catch (error) {
       if (mounted) _notice(error.toString().replaceFirst('Exception: ', ''));
     }
   }
-
-  Future<void> _showGpsMismatch(
-    Position position,
-    double distance,
-  ) => showDialog<void>(
-    context: context,
-    builder: (ctx) => AlertDialog(
-      icon: const Icon(Icons.location_off_rounded, color: Color(0xFFD88700)),
-      title: const Text('GPS chưa đúng vị trí văn phòng'),
-      content: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            'Vị trí app nhận được: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}',
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Vị trí văn phòng: ${officeLatitude.toStringAsFixed(6)}, ${officeLongitude.toStringAsFixed(6)}',
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Khoảng cách ${distance.round()} m · giới hạn ${officeRadiusMeters.round()} m.',
-          ),
-          const SizedBox(height: 14),
-          Container(
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: const Color(0xFFEFF4FB),
-              borderRadius: BorderRadius.circular(14),
-            ),
-            child: const Text(
-              'GPS trên Android Emulator là vị trí mô phỏng riêng, không tự lấy vị trí Windows/Chrome đang chia sẻ. Mở nút ⋮ của giả lập → Location, nhập tọa độ văn phòng ở trên rồi đặt vị trí.',
-              style: TextStyle(fontSize: 12, height: 1.45),
-            ),
-          ),
-        ],
-      ),
-      actions: [
-        FilledButton(
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Đã hiểu'),
-        ),
-      ],
-    ),
-  );
 
   Future<void> _showOfficeQr() async {
     try {
@@ -1648,7 +1853,7 @@ class _HomePageState extends State<HomePage> {
               ),
               const SizedBox(height: 14),
               const Text(
-                'Nhân viên quét mã này để chấm công. Vị trí GPS vẫn phải nằm trong vùng văn phòng.',
+                'Nhân viên quét mã này để chấm công. Ứng dụng lưu GPS, sai số và khoảng cách để quản trị viên đối soát.',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   fontSize: 13,
@@ -1729,6 +1934,29 @@ class _HomePageState extends State<HomePage> {
   void _editEmployee(Employee e) => _employeeDialog(existing: e);
 
   Future<void> _deleteEmployee(Employee employee) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xóa hồ sơ nhân viên?'),
+        content: Text(
+          'Bạn có chắc muốn xóa ${employee.name} (${employee.code}) không?',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Giữ lại'),
+          ),
+          FilledButton(
+            style: FilledButton.styleFrom(
+              backgroundColor: const Color(0xFFD65353),
+            ),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Xóa hồ sơ'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
     try {
       if (_employeeApi != null) await _employeeApi.delete(employee.id);
       if (!mounted) return;
@@ -1780,13 +2008,25 @@ class _HomePageState extends State<HomePage> {
             child: const Text('Hủy'),
           ),
           FilledButton(
-            onPressed: () => Navigator.pop(ctx, true),
+            onPressed: () {
+              if (name.text.trim().isEmpty ||
+                  code.text.trim().isEmpty ||
+                  job.text.trim().isEmpty) {
+                ScaffoldMessenger.of(ctx).showSnackBar(
+                  const SnackBar(
+                    content: Text('Nhập đủ họ tên, mã nhân viên và chức vụ.'),
+                  ),
+                );
+                return;
+              }
+              Navigator.pop(ctx, true);
+            },
             child: const Text('Lưu'),
           ),
         ],
       ),
     );
-    if (result == true && name.text.trim().isNotEmpty) {
+    if (result == true) {
       final employee = Employee(
         name.text.trim(),
         job.text.trim(),
