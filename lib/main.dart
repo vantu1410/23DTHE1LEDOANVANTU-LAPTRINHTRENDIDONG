@@ -1,15 +1,19 @@
 import 'dart:async';
+import 'dart:io';
+import 'dart:ui' as ui;
 
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
-import 'package:local_auth/local_auth.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
+import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:sensors_plus/sensors_plus.dart';
 
 import 'models/employee.dart';
 import 'models/punch_record.dart';
 import 'services/attendance_api.dart';
+import 'services/admin_user_api.dart';
 import 'services/auth_api.dart';
 import 'services/employee_api.dart';
 
@@ -20,6 +24,7 @@ const navy = Color(0xFF142E50);
 const blue = Color(0xFF3978F6);
 const canvas = Color(0xFFF4F7FB);
 const green = Color(0xFF18A979);
+const companyQrPayload = 'TUTIME:OFFICE:23DTHE1LEDOANVANTU-GROUP8';
 final officeLatitude = double.parse(
   const String.fromEnvironment('OFFICE_LAT', defaultValue: '10.7769'),
 );
@@ -66,7 +71,10 @@ class LoginPage extends StatefulWidget {
 }
 
 class _LoginPageState extends State<LoginPage> {
-  static const _apiBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static const _apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://ledoanvantu2-api.onrender.com',
+  );
   final user = TextEditingController();
   final password = TextEditingController();
   final otp = TextEditingController();
@@ -194,7 +202,7 @@ class _LoginPageState extends State<LoginPage> {
                     borderRadius: BorderRadius.circular(18),
                   ),
                   child: const Icon(
-                    Icons.fingerprint_rounded,
+                    Icons.event_available_rounded,
                     color: Colors.white,
                     size: 34,
                   ),
@@ -419,7 +427,10 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  static const _apiBaseUrl = String.fromEnvironment('API_BASE_URL');
+  static const _apiBaseUrl = String.fromEnvironment(
+    'API_BASE_URL',
+    defaultValue: 'https://ledoanvantu2-api.onrender.com',
+  );
   int tab = 0;
   late final EmployeeApi? _employeeApi;
   late final AttendanceApi? _attendanceApi;
@@ -531,7 +542,7 @@ class _HomePageState extends State<HomePage> {
               color: const Color(0xFFE6EDFF),
               borderRadius: BorderRadius.circular(14),
             ),
-            child: const Icon(Icons.fingerprint, color: blue),
+            child: const Icon(Icons.event_available_rounded, color: blue),
           ),
           const SizedBox(width: 11),
           const Expanded(
@@ -817,9 +828,7 @@ class _HomePageState extends State<HomePage> {
           child: FilledButton.icon(
             onPressed: checkedOut ? null : _punch,
             icon: Icon(
-              checkedIn
-                  ? Icons.logout_rounded
-                  : Icons.face_retouching_natural_rounded,
+              checkedIn ? Icons.logout_rounded : Icons.qr_code_scanner_rounded,
             ),
             label: Text(
               checkedIn ? 'Chấm công tan ca' : 'Chấm công vào ca',
@@ -836,7 +845,7 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 8),
         const Center(
           child: Text(
-            'QR  ·  Sinh trắc học  ·  Vị trí GPS',
+            'QR công ty  ·  Vị trí GPS',
             style: TextStyle(fontSize: 11, color: Color(0xFF8B98AA)),
           ),
         ),
@@ -1324,35 +1333,42 @@ class _HomePageState extends State<HomePage> {
       _setting(
         Icons.badge_outlined,
         'Thông tin cá nhân',
-        'Hồ sơ và mã nhân viên',
-        () => _notice('Hồ sơ nhân viên sẽ kết nối API.'),
+        'Xem hồ sơ và vai trò hiện tại',
+        _showAccountInfo,
       ),
       if (isAdmin)
         _setting(
+          Icons.manage_accounts_outlined,
+          'Quản lý tài khoản',
+          'Xem và xóa tài khoản người dùng',
+          _openAdminUsers,
+        ),
+      if (isAdmin)
+        _setting(
           Icons.qr_code_2_rounded,
-          'Mã QR điểm danh hôm nay',
-          'Hiển thị mã cho nhân viên quét tại văn phòng',
+          'Mã QR công ty cố định',
+          'Mở mã để lưu hoặc cho nhân viên quét chấm công',
           _showOfficeQr,
         ),
       _setting(
         Icons.verified_user_outlined,
         'Bảo mật & OTP',
-        'Email OTP đang bật',
-        () => _notice('Cài đặt bảo mật'),
+        'Đăng nhập bằng mật khẩu và mã email OTP',
+        _showSecurityInfo,
       ),
       _setting(
         Icons.speed_rounded,
         'Đo áp suất không khí',
         'Cảm biến khí áp · Mục d',
-        () => Navigator.of(context).push(
-          MaterialPageRoute(builder: (_) => const PressureSensorPage()),
-        ),
+        () => Navigator.of(
+          context,
+        ).push(MaterialPageRoute(builder: (_) => const PressureSensorPage())),
       ),
       _setting(
         Icons.help_outline,
         'Trợ giúp',
         'Hướng dẫn sử dụng TuTime',
-        () => _notice('Liên hệ quản trị viên để được hỗ trợ.'),
+        _showHelp,
       ),
       const SizedBox(height: 8),
       OutlinedButton.icon(
@@ -1399,26 +1415,90 @@ class _HomePageState extends State<HomePage> {
     ),
   );
 
-  void _punch() {
-    _verifyAndPunch();
+  void _openAdminUsers() {
+    if (widget.accessToken == null || _apiBaseUrl.isEmpty) {
+      _notice(
+        'Không thể tải tài khoản: chưa kết nối API hoặc phiên đăng nhập.',
+      );
+      return;
+    }
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) =>
+            AdminUsersPage(api: AdminUserApi(_apiBaseUrl, widget.accessToken!)),
+      ),
+    );
   }
+
+  void _showAccountInfo() => showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Thông tin tài khoản'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text('Họ tên: ${widget.name}'),
+          const SizedBox(height: 8),
+          Text('Vai trò: ${isAdmin ? 'Quản trị viên' : 'Nhân viên'}'),
+          const SizedBox(height: 8),
+          const Text('Hệ thống chấm công TuTime'),
+        ],
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Đóng'),
+        ),
+      ],
+    ),
+  );
+
+  void _showSecurityInfo() => showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Bảo mật tài khoản'),
+      content: const Text(
+        'Đăng nhập cần tên đăng nhập, mật khẩu và mã OTP gửi đến email đã đăng ký. Mỗi mã OTP có thời hạn 5 phút. Không chia sẻ mã OTP cho người khác.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Đã hiểu'),
+        ),
+      ],
+    ),
+  );
+
+  void _showHelp() => showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      title: const Text('Hướng dẫn nhanh'),
+      content: const Text(
+        'Chấm công: quét QR công ty → xác nhận vị trí GPS → gửi bản ghi. Admin quản lý nhân viên và tài khoản ở tab Tài khoản. Mục Đo áp suất không khí có thể chạy bằng cảm biến ảo trên Android Emulator.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Đóng'),
+        ),
+      ],
+    ),
+  );
+
+  void _punch() => _verifyAndPunch();
 
   Future<void> _verifyAndPunch() async {
     try {
       final qr = await Navigator.of(context)
           .push<String>(MaterialPageRoute(builder: (_) => const QrScanPage()));
       if (!mounted || qr == null) return;
-      if (qr != _officeQrPayload()) {
-        _notice('QR không hợp lệ. Hãy quét mã chấm công của công ty.');
+      if (qr != companyQrPayload) {
+        _notice(
+          'QR không đúng mã công ty. Hãy quét lại mã cố định của TuTime.',
+        );
         return;
       }
-
-      final authenticated = await LocalAuthentication().authenticate(
-        localizedReason: 'Xác nhận danh tính để chấm công',
-        biometricOnly: true,
-        persistAcrossBackgrounding: true,
-      );
-      if (!mounted || !authenticated) return;
 
       final position = await _getCurrentPosition();
       final distance = Geolocator.distanceBetween(
@@ -1453,7 +1533,7 @@ class _HomePageState extends State<HomePage> {
               'Chấm công vào ca',
               DateTime.now(),
               'Văn phòng · ${distance.round()}m',
-              'QR + sinh trắc học + GPS',
+              'QR công ty + GPS',
             ),
           );
         } else {
@@ -1463,16 +1543,47 @@ class _HomePageState extends State<HomePage> {
               'Chấm công tan ca',
               DateTime.now(),
               'Văn phòng · ${distance.round()}m',
-              'QR + sinh trắc học + GPS',
+              'QR công ty + GPS',
             ),
           );
         }
       });
       if (_attendanceApi != null) await _refreshHistory();
-      _notice('Đã xác minh QR, sinh trắc học và vị trí. Chấm công thành công.');
+      _notice('Đã xác minh QR công ty và vị trí. Chấm công thành công.');
     } catch (error) {
       if (mounted) _notice(error.toString().replaceFirst('Exception: ', ''));
     }
+  }
+
+  void _showOfficeQr() {
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mã QR công ty cố định'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            QrImageView(
+              data: companyQrPayload,
+              size: 230,
+              backgroundColor: Colors.white,
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Bạn có thể chụp màn hình mã này để dùng lại. Nhân viên vẫn phải ở trong vùng GPS văn phòng.',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 12, color: Color(0xFF78869A)),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Đóng'),
+          ),
+        ],
+      ),
+    );
   }
 
   Future<Position> _getCurrentPosition() async {
@@ -1495,44 +1606,6 @@ class _HomePageState extends State<HomePage> {
       locationSettings: const LocationSettings(
         accuracy: LocationAccuracy.high,
         timeLimit: Duration(seconds: 20),
-      ),
-    );
-  }
-
-  String _officeQrPayload() {
-    final now = DateTime.now();
-    final day =
-        '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    return 'TUTIME:OFFICE:$day';
-  }
-
-  void _showOfficeQr() {
-    showDialog<void>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('QR điểm danh hôm nay'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            QrImageView(
-              data: _officeQrPayload(),
-              size: 230,
-              backgroundColor: Colors.white,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              _officeQrPayload(),
-              textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, color: Color(0xFF78869A)),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Đóng'),
-          ),
-        ],
       ),
     );
   }
@@ -1669,20 +1742,32 @@ class _PressureSensorPageState extends State<PressureSensorPage> {
   StreamSubscription<BarometerEvent>? _subscription;
   double? _pressureHpa;
   bool _sensorUnavailable = false;
+  final List<_PressureReading> _recentReadings = [];
+
+  double? get _fiveMinuteChange {
+    if (_recentReadings.length < 2) return null;
+    return (_recentReadings.last.value - _recentReadings.first.value).abs();
+  }
 
   @override
   void initState() {
     super.initState();
-    _subscription = barometerEventStream(
-      samplingPeriod: const Duration(seconds: 1),
-    ).listen(
-      (event) {
-        if (mounted) setState(() => _pressureHpa = event.pressure);
-      },
-      onError: (Object error) {
-        if (mounted) setState(() => _sensorUnavailable = true);
-      },
-    );
+    _subscription =
+        barometerEventStream(samplingPeriod: const Duration(seconds: 1)).listen(
+          (event) {
+            if (!mounted) return;
+            final now = DateTime.now();
+            _recentReadings.add(_PressureReading(now, event.pressure));
+            _recentReadings.removeWhere(
+              (reading) =>
+                  now.difference(reading.time) > const Duration(minutes: 5),
+            );
+            setState(() => _pressureHpa = event.pressure);
+          },
+          onError: (Object error) {
+            if (mounted) setState(() => _sensorUnavailable = true);
+          },
+        );
   }
 
   @override
@@ -1728,6 +1813,67 @@ class _PressureSensorPageState extends State<PressureSensorPage> {
               ),
             ),
             const SizedBox(height: 16),
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: (_fiveMinuteChange ?? 0) >= 2
+                    ? const Color(0xFFFFF3E0)
+                    : const Color(0xFFE9F8F2),
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: Row(
+                children: [
+                  Icon(
+                    (_fiveMinuteChange ?? 0) >= 2
+                        ? Icons.warning_amber_rounded
+                        : Icons.eco_outlined,
+                    color: (_fiveMinuteChange ?? 0) >= 2
+                        ? const Color(0xFFD88700)
+                        : green,
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          (_fiveMinuteChange ?? 0) >= 2
+                              ? 'Áp suất đang thay đổi nhanh'
+                              : 'Theo dõi môi trường trong ca',
+                          style: const TextStyle(
+                            color: ink,
+                            fontWeight: FontWeight.w800,
+                          ),
+                        ),
+                        const SizedBox(height: 4),
+                        Text(
+                          _fiveMinuteChange == null
+                              ? 'Đang thu thập dữ liệu để tạo mốc theo dõi 5 phút.'
+                              : 'Biến động 5 phút: ${_fiveMinuteChange!.toStringAsFixed(1)} hPa. Cảnh báo khi thay đổi từ 2 hPa.',
+                          style: const TextStyle(
+                            color: Color(0xFF78869A),
+                            fontSize: 12,
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 14),
+            const Text(
+              'Tính năng riêng TuTime: cảnh báo sớm khi áp suất môi trường thay đổi nhanh trong ca làm.',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Color(0xFF78869A),
+                fontSize: 12,
+                height: 1.45,
+              ),
+            ),
+            const SizedBox(height: 16),
             const Text(
               'Dữ liệu đọc trực tiếp từ cảm biến khí áp của thiết bị.',
               textAlign: TextAlign.center,
@@ -1750,6 +1896,12 @@ class _PressureSensorPageState extends State<PressureSensorPage> {
   );
 }
 
+class _PressureReading {
+  const _PressureReading(this.time, this.value);
+  final DateTime time;
+  final double value;
+}
+
 class QrScanPage extends StatefulWidget {
   const QrScanPage({super.key});
 
@@ -1759,6 +1911,85 @@ class QrScanPage extends StatefulWidget {
 
 class _QrScanPageState extends State<QrScanPage> {
   bool completed = false;
+  bool readingImage = false;
+  final MobileScannerController controller = MobileScannerController(
+    formats: const [BarcodeFormat.qrCode],
+  );
+
+  Future<void> _scanSavedImage() async {
+    final image = await ImagePicker().pickImage(source: ImageSource.gallery);
+    if (image == null || !mounted) return;
+    await _analyzeQrImage(image.path);
+  }
+
+  Future<void> _scanBuiltInCompanyQr() async {
+    setState(() => readingImage = true);
+    try {
+      final painter = QrPainter(
+        data: companyQrPayload,
+        version: QrVersions.auto,
+        gapless: true,
+      );
+      final imageData = await painter.toImageData(
+        600,
+        format: ui.ImageByteFormat.png,
+      );
+      if (imageData == null) throw Exception('Không tạo được ảnh QR công ty.');
+      final directory = await getTemporaryDirectory();
+      final file = File(
+        '${directory.path}${Platform.pathSeparator}tutime-company-qr.png',
+      );
+      await file.writeAsBytes(imageData.buffer.asUint8List(), flush: true);
+      if (mounted) await _analyzeQrImage(file.path);
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không đọc được QR công ty: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => readingImage = false);
+    }
+  }
+
+  Future<void> _analyzeQrImage(String path) async {
+    setState(() => readingImage = true);
+    try {
+      completed = false;
+      final capture = await controller.analyzeImage(path);
+      if (!mounted) return;
+      final value = capture?.barcodes.isNotEmpty == true
+          ? capture!.barcodes.first.rawValue
+          : null;
+      if (value != null) {
+        _finish(value);
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Không tìm thấy mã QR trong ảnh.')),
+        );
+      }
+    } catch (error) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Không đọc được ảnh QR: $error')),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => readingImage = false);
+    }
+  }
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  void _finish(String value) {
+    if (completed || !mounted) return;
+    completed = true;
+    Navigator.of(context).pop(value);
+  }
 
   @override
   Widget build(BuildContext context) => Scaffold(
@@ -1766,17 +1997,29 @@ class _QrScanPageState extends State<QrScanPage> {
       title: const Text('Quét QR chấm công'),
       backgroundColor: Colors.black,
       foregroundColor: Colors.white,
+      actions: [
+        IconButton(
+          tooltip: 'Chọn ảnh QR đã lưu',
+          onPressed: readingImage ? null : _scanSavedImage,
+          icon: readingImage
+              ? const SizedBox.square(
+                  dimension: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.photo_library_outlined),
+        ),
+      ],
     ),
     body: Stack(
       fit: StackFit.expand,
       children: [
         MobileScanner(
+          controller: controller,
           onDetect: (capture) {
-            if (completed || capture.barcodes.isEmpty) return;
+            if (capture.barcodes.isEmpty) return;
             final value = capture.barcodes.first.rawValue;
             if (value == null) return;
-            completed = true;
-            Navigator.of(context).pop(value);
+            _finish(value);
           },
         ),
         IgnorePointer(
@@ -1794,21 +2037,194 @@ class _QrScanPageState extends State<QrScanPage> {
         Positioned(
           left: 30,
           right: 30,
-          bottom: 44,
-          child: Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: .66),
-              borderRadius: BorderRadius.circular(16),
-            ),
-            child: const Text(
-              'Đưa mã QR của công ty vào khung để xác thực điểm chấm công.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Colors.white, fontSize: 14),
-            ),
+          bottom: 24,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: Colors.black.withValues(alpha: .66),
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: const Text(
+                  'Quét QR công ty bằng camera, chọn ảnh đã lưu ở góc trên, hoặc dùng ảnh QR demo có sẵn cho một giả lập.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: Colors.white, fontSize: 14),
+                ),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                onPressed: readingImage ? null : _scanBuiltInCompanyQr,
+                icon: const Icon(Icons.qr_code_2_rounded),
+                label: const Text('Dùng QR demo đã lưu trong app'),
+                style: OutlinedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: navy,
+                ),
+              ),
+            ],
           ),
         ),
       ],
     ),
+  );
+}
+
+class AdminUsersPage extends StatefulWidget {
+  const AdminUsersPage({super.key, required this.api});
+  final AdminUserApi api;
+
+  @override
+  State<AdminUsersPage> createState() => _AdminUsersPageState();
+}
+
+class _AdminUsersPageState extends State<AdminUsersPage> {
+  List<AdminUser> users = [];
+  bool loading = true;
+  String? error;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUsers();
+  }
+
+  Future<void> _loadUsers() async {
+    setState(() {
+      loading = true;
+      error = null;
+    });
+    try {
+      final loaded = await widget.api.getAll();
+      if (!mounted) return;
+      setState(() {
+        users = loaded;
+        loading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        error = e.toString().replaceFirst('Exception: ', '');
+        loading = false;
+      });
+    }
+  }
+
+  Future<void> _delete(AdminUser user) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Xóa tài khoản?'),
+        content: Text(
+          'Xóa ${user.fullName} (${user.username})? Thao tác này cũng xóa lịch sử chấm công của tài khoản.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Hủy'),
+          ),
+          FilledButton.tonal(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Xóa tài khoản'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    try {
+      await widget.api.delete(user.id);
+      if (!mounted) return;
+      setState(() => users.removeWhere((item) => item.id == user.id));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(const SnackBar(content: Text('Đã xóa tài khoản.')));
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(e.toString().replaceFirst('Exception: ', ''))),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) => Scaffold(
+    appBar: AppBar(
+      title: const Text('Quản lý tài khoản'),
+      backgroundColor: canvas,
+      foregroundColor: ink,
+      actions: [
+        IconButton(
+          tooltip: 'Tải lại',
+          onPressed: loading ? null : _loadUsers,
+          icon: const Icon(Icons.refresh_rounded),
+        ),
+      ],
+    ),
+    body: loading
+        ? const Center(child: CircularProgressIndicator())
+        : error != null
+        ? Center(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.cloud_off_outlined, size: 42, color: blue),
+                  const SizedBox(height: 12),
+                  Text(error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 12),
+                  FilledButton.icon(
+                    onPressed: _loadUsers,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Thử lại'),
+                  ),
+                ],
+              ),
+            ),
+          )
+        : users.isEmpty
+        ? const Center(child: Text('Chưa có tài khoản nào.'))
+        : RefreshIndicator(
+            onRefresh: _loadUsers,
+            child: ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: users.length,
+              separatorBuilder: (_, _) => const SizedBox(height: 8),
+              itemBuilder: (context, index) {
+                final user = users[index];
+                final isAdmin = user.role.toLowerCase() == 'admin';
+                return Card(
+                  color: Colors.white,
+                  child: ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isAdmin
+                          ? const Color(0xFFE9EFFF)
+                          : const Color(0xFFE7F7F1),
+                      child: Icon(
+                        isAdmin ? Icons.admin_panel_settings : Icons.person,
+                        color: isAdmin ? blue : green,
+                      ),
+                    ),
+                    title: Text(
+                      user.fullName,
+                      style: const TextStyle(fontWeight: FontWeight.w700),
+                    ),
+                    subtitle: Text(
+                      '@${user.username}\n${user.email}\n${isAdmin ? 'Quản trị viên' : 'Nhân viên'} · ${user.emailVerified ? 'Đã xác nhận email' : 'Chưa xác nhận email'}',
+                    ),
+                    isThreeLine: true,
+                    trailing: IconButton(
+                      tooltip: 'Xóa tài khoản',
+                      onPressed: () => _delete(user),
+                      icon: const Icon(
+                        Icons.delete_outline,
+                        color: Color(0xFFD65353),
+                      ),
+                    ),
+                  ),
+                );
+              },
+            ),
+          ),
   );
 }

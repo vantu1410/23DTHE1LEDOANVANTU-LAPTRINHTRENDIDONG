@@ -1,6 +1,6 @@
 # TuTime chấm công
 
-TuTime là ứng dụng Flutter chấm công cho nhân viên. Ba chức năng trình bày đã chọn là **chia sẻ vị trí GPS (b)**, **đo áp suất khí quyển (d)** và **quét QR (e)**. Chấm công còn yêu cầu sinh trắc học trên thiết bị. Chỉ gửi vị trí khi nhân viên bấm chấm công; backend kiểm tra khoảng cách rồi chỉ lưu khoảng cách tới văn phòng, không lưu tọa độ chính xác.
+TuTime là ứng dụng Flutter chấm công cho nhân viên. Ba chức năng trình bày đã chọn là **chia sẻ vị trí GPS (b)**, **đo áp suất khí quyển (d)** và **nhận diện QR (e)**. Nhân viên quét QR cố định của công ty, sau đó app kiểm tra vị trí GPS; backend chỉ lưu khoảng cách tới văn phòng, không lưu tọa độ chính xác.
 
 Project Flutter mang tên cá nhân `LEDOANVANTU2`. Mã Flutter nằm trong `lib/`; API ASP.NET Core nằm trong `backend/LEDOANVANTU2.Api/`. Thư mục `app/` ở gốc là project Kotlin ban đầu, được giữ lại làm bản gốc tham khảo; ứng dụng Flutter Android được build từ `android/`.
 
@@ -8,14 +8,14 @@ Project Flutter mang tên cá nhân `LEDOANVANTU2`. Mã Flutter nằm trong `lib
 
 ```powershell
 flutter pub get
-flutter run --dart-define=API_BASE_URL=https://ledoanvantu2-api.onrender.com --dart-define=OFFICE_LAT=10.7769 --dart-define=OFFICE_LNG=106.7009 --dart-define=OFFICE_RADIUS_M=150
+flutter run --dart-define=OFFICE_LAT=10.7769 --dart-define=OFFICE_LNG=106.7009 --dart-define=OFFICE_RADIUS_M=150
 ```
 
-Không đặt `API_BASE_URL` thì app chạy chế độ demo. Đăng nhập demo bằng tên/mật khẩu mẫu trên màn hình, chọn vai trò demo, rồi nhập OTP `123456`. Chế độ demo không tạo tài khoản thật và CRUD chỉ lưu trong bộ nhớ.
+App mặc định kết nối API đã deploy tại Render. Nếu nhóm có API riêng, truyền `--dart-define=API_BASE_URL=https://...` khi chạy/build. Chế độ demo ngoại tuyến chỉ bật khi chủ động truyền `--dart-define=API_BASE_URL=`; dữ liệu demo không tạo tài khoản thật và CRUD chỉ lưu trong bộ nhớ.
 
 Khi API đã deploy, nhân viên đăng ký bằng email, username và mật khẩu; backend gửi OTP qua email. Đăng nhập dùng username, mật khẩu và OTP. Vai trò nhận từ token backend; tài khoản mới là `Employee`. Tài khoản admin được khởi tạo riêng bằng các biến `BootstrapAdmin__...` trên Render.
 
-Admin mở **Tài khoản → Mã QR điểm danh hôm nay** để hiển thị QR. Nhân viên quét QR đó trên điện thoại, xác thực sinh trắc học, rồi app kiểm tra GPS. QR có hiệu lực theo ngày Việt Nam. Tọa độ văn phòng hiện dùng là tọa độ mẫu ở TP.HCM (`10.7769`, `106.7009`); thay `Office__Latitude`, `Office__Longitude` trên Render và dùng cùng giá trị `OFFICE_LAT`/`OFFICE_LNG` khi build APK để geofence khớp văn phòng thực tế.
+Admin mở **Tài khoản → Mã QR công ty cố định** để hiển thị mã. Nhân viên có thể quét bằng camera, chọn ảnh QR đã lưu, hoặc trong một giả lập dùng nút **Dùng QR demo đã lưu trong app** để kiểm tra giải mã ảnh QR. QR cố định có thể bị sao chép, vì vậy API vẫn kiểm tra bán kính GPS. Tọa độ văn phòng hiện dùng là tọa độ mẫu ở TP.HCM (`10.7769`, `106.7009`); thay `Office__Latitude`, `Office__Longitude` trên Render và dùng cùng giá trị `OFFICE_LAT`/`OFFICE_LNG` khi build APK để geofence khớp văn phòng thực tế.
 
 Mục d mở tại **Tài khoản → Đo áp suất không khí**. Trên Android Emulator, mở **⋮ → Virtual sensors → Additional sensors → Pressure** để thay đổi giá trị cảm biến mô phỏng. Một đăng ký chưa xác nhận có thể gửi lại cùng email và tên đăng nhập để nhận OTP mới; OTP đăng ký/đăng nhập hết hạn sau 5 phút.
 
@@ -54,7 +54,7 @@ Trong Development, nếu chưa cấu hình nhà cung cấp email, API trả OTP 
 API đã deploy tại `https://ledoanvantu2-api.onrender.com`; kiểm tra `/health`, rồi build APK:
 
 ```powershell
-flutter build apk --release --dart-define=API_BASE_URL=https://ledoanvantu2-api.onrender.com --dart-define=OFFICE_LAT=10.7769 --dart-define=OFFICE_LNG=106.7009 --dart-define=OFFICE_RADIUS_M=150
+flutter build apk --release --dart-define=OFFICE_LAT=10.7769 --dart-define=OFFICE_LNG=106.7009 --dart-define=OFFICE_RADIUS_M=150
 ```
 
 Render và GitHub là dịch vụ bên ngoài. Trước khi public API, thay tọa độ mẫu, cấu hình email provider, nhập thông tin admin và kiểm tra môi trường database của nhóm.

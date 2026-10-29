@@ -24,13 +24,9 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
     [HttpPost]
     public async Task<IActionResult> Create(AttendanceRequest request, CancellationToken ct)
     {
-        if (!request.BiometricVerified)
-            return BadRequest(new { message = "Cần hoàn tất xác thực sinh trắc học trên thiết bị." });
-
-        var nowVietnam = DateTimeOffset.UtcNow.ToOffset(TimeSpan.FromHours(7));
-        var expectedQr = $"TUTIME:OFFICE:{nowVietnam:yyyy-MM-dd}";
+        const string expectedQr = "TUTIME:OFFICE:23DTHE1LEDOANVANTU-GROUP8";
         if (!string.Equals(request.QrToken, expectedQr, StringComparison.Ordinal))
-            return BadRequest(new { message = "QR không hợp lệ hoặc đã hết hạn." });
+            return BadRequest(new { message = "QR không hợp lệ. Hãy quét đúng mã QR cố định của công ty." });
 
         var latitude = configuration.GetValue<double>("Office:Latitude");
         var longitude = configuration.GetValue<double>("Office:Longitude");
@@ -45,7 +41,7 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
             Type = request.Type,
             RecordedAtUtc = DateTimeOffset.UtcNow,
             DistanceFromOfficeMeters = Math.Round(distance, 1),
-            Verification = "QR + sinh trắc học thiết bị + GPS"
+            Verification = "QR công ty + GPS"
         };
         db.AttendanceRecords.Add(record);
         await db.SaveChangesAsync(ct);
@@ -70,4 +66,4 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
     }
 }
 
-public sealed record AttendanceRequest(string Type, double Latitude, double Longitude, string QrToken, bool BiometricVerified);
+public sealed record AttendanceRequest(string Type, double Latitude, double Longitude, string QrToken);

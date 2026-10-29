@@ -30,7 +30,6 @@ class AttendanceApi {
             'latitude': latitude,
             'longitude': longitude,
             'qrToken': qrToken,
-            'biometricVerified': true,
           }),
         )
         .timeout(const Duration(seconds: 90));
