@@ -43,11 +43,11 @@ dotnet ef database update --project LEDOANVANTU2.Api --startup-project LEDOANVAN
 dotnet run --project LEDOANVANTU2.Api
 ```
 
-Trong Development, nếu SMTP chưa cấu hình, API trả OTP thử nghiệm trong response. Production không trả OTP; phải cấu hình SMTP trước để đăng ký và đăng nhập email OTP hoạt động.
+Trong Development, nếu chưa cấu hình nhà cung cấp email, API trả OTP thử nghiệm trong response. Production không trả OTP. Trên Render miễn phí, SMTP cổng 25/465/587 bị chặn nên hãy dùng Brevo API qua HTTPS; cấu hình `Brevo__ApiKey` và `Smtp__From` là địa chỉ sender đã xác minh trong Brevo. `Brevo__SenderName` mặc định là `TuTime`. Khi có Brevo API key, API ưu tiên gửi OTP qua Brevo. SMTP chỉ dùng làm phương án dự phòng trên hosting cho phép kết nối SMTP.
 
 ## Deploy lên Render
 
-`render.yaml` tạo web service API bằng Docker và PostgreSQL free ở Singapore. Từ Render chọn **New → Blueprint**, chọn repo công khai của project và dùng file `render.yaml`. Khi Render yêu cầu các biến `sync: false`, điền thông tin admin khởi tạo và SMTP trực tiếp trên Render; không commit các giá trị này vào GitHub.
+`render.yaml` tạo web service API bằng Docker và PostgreSQL free ở Singapore. Từ Render chọn **New → Blueprint**, chọn repo công khai của project và dùng file `render.yaml`. Khi Render yêu cầu các biến `sync: false`, điền thông tin admin khởi tạo và `Brevo__ApiKey` trực tiếp trên Render; `Smtp__From` phải trùng địa chỉ sender đã xác minh ở Brevo. Không commit API key vào GitHub. Render miễn phí chặn SMTP 25/465/587, vì vậy chỉ nhập Gmail SMTP sẽ không gửi được OTP.
 
 API đã deploy tại `https://ledoanvantu2-api.onrender.com`; kiểm tra `/health`, rồi build APK:
 
@@ -55,4 +55,4 @@ API đã deploy tại `https://ledoanvantu2-api.onrender.com`; kiểm tra `/heal
 flutter build apk --release --dart-define=API_BASE_URL=https://ledoanvantu2-api.onrender.com --dart-define=OFFICE_LAT=10.7769 --dart-define=OFFICE_LNG=106.7009 --dart-define=OFFICE_RADIUS_M=150
 ```
 
-Render và GitHub là dịch vụ bên ngoài. Trước khi public API, thay tọa độ mẫu, cấu hình SMTP, nhập thông tin admin và kiểm tra môi trường database của nhóm.
+Render và GitHub là dịch vụ bên ngoài. Trước khi public API, thay tọa độ mẫu, cấu hình email provider, nhập thông tin admin và kiểm tra môi trường database của nhóm.

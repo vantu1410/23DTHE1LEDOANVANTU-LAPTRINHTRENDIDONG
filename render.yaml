@@ -54,3 +54,7 @@ services:
         sync: false
       - key: Smtp__From
         sync: false
+      - key: Brevo__ApiKey
+        sync: false
+      - key: Brevo__SenderName
+        value: TuTime

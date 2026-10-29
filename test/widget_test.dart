@@ -1,30 +1,31 @@
-// This is a basic Flutter widget test.
-//
-// To perform an interaction with a widget in your test, use the WidgetTester
-// utility in the flutter_test package. For example, you can send tap and scroll
-// gestures. You can also use WidgetTester to find child widgets in the widget
-// tree, read text, and verify that the values of widget properties are correct.
-
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-
 import 'package:ledoanvantu2/main.dart';
 
 void main() {
-  testWidgets('Counter increments smoke test', (WidgetTester tester) async {
-    // Build our app and trigger a frame.
-    await tester.pumpWidget(const MyApp());
+  testWidgets('login screen starts with empty credentials', (tester) async {
+    await tester.pumpWidget(const ChamCongApp());
 
-    // Verify that our counter starts at 0.
-    expect(find.text('0'), findsOneWidget);
-    expect(find.text('1'), findsNothing);
+    expect(find.text('Chấm công\nthật dễ dàng.'), findsOneWidget);
+    expect(find.text('Tên đăng nhập'), findsOneWidget);
+    expect(find.text('Mật khẩu'), findsOneWidget);
+    expect(find.text('Tiếp tục  →'), findsOneWidget);
 
-    // Tap the '+' icon and trigger a frame.
-    await tester.tap(find.byIcon(Icons.add));
-    await tester.pump();
+    final fields = tester.widgetList<TextField>(find.byType(TextField));
+    expect(fields, hasLength(2));
+    expect(fields.every((field) => field.controller?.text.isEmpty ?? true), isTrue);
+  });
 
-    // Verify that our counter has incremented.
-    expect(find.text('0'), findsNothing);
-    expect(find.text('1'), findsOneWidget);
+  testWidgets('registration mode shows name and email fields', (tester) async {
+    await tester.pumpWidget(const ChamCongApp());
+    final registerLink = find.text('Chưa có tài khoản? Đăng ký');
+    await tester.ensureVisible(registerLink);
+    await tester.tap(registerLink);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Họ và tên'), findsOneWidget);
+    expect(find.text('Email'), findsOneWidget);
+    expect(find.text('Tạo tài khoản  →'), findsOneWidget);
+    expect(find.byType(TextField), findsNWidgets(4));
   });
 }
