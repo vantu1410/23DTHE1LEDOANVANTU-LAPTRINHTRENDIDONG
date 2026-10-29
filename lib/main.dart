@@ -1521,9 +1521,7 @@ class _HomePageState extends State<HomePage> {
         officeLongitude,
       );
       if (distance > officeRadiusMeters) {
-        _notice(
-          'Bạn đang cách văn phòng ${distance.round()}m; bán kính cho phép ${officeRadiusMeters.round()}m.',
-        );
+        await _showGpsMismatch(position, distance);
         return;
       }
 
@@ -1567,6 +1565,52 @@ class _HomePageState extends State<HomePage> {
       if (mounted) _notice(error.toString().replaceFirst('Exception: ', ''));
     }
   }
+
+  Future<void> _showGpsMismatch(
+    Position position,
+    double distance,
+  ) => showDialog<void>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      icon: const Icon(Icons.location_off_rounded, color: Color(0xFFD88700)),
+      title: const Text('GPS chưa đúng vị trí văn phòng'),
+      content: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Vị trí app nhận được: ${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}',
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Vị trí văn phòng: ${officeLatitude.toStringAsFixed(6)}, ${officeLongitude.toStringAsFixed(6)}',
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Khoảng cách ${distance.round()} m · giới hạn ${officeRadiusMeters.round()} m.',
+          ),
+          const SizedBox(height: 14),
+          Container(
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: const Color(0xFFEFF4FB),
+              borderRadius: BorderRadius.circular(14),
+            ),
+            child: const Text(
+              'GPS trên Android Emulator là vị trí mô phỏng riêng, không tự lấy vị trí Windows/Chrome đang chia sẻ. Mở nút ⋮ của giả lập → Location, nhập tọa độ văn phòng ở trên rồi đặt vị trí.',
+              style: TextStyle(fontSize: 12, height: 1.45),
+            ),
+          ),
+        ],
+      ),
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Đã hiểu'),
+        ),
+      ],
+    ),
+  );
 
   Future<void> _showOfficeQr() async {
     try {
