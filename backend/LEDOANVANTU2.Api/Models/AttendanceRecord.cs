@@ -10,5 +10,6 @@ public sealed class AttendanceRecord
     public double Latitude { get; set; }
     public double Longitude { get; set; }
     public double? AccuracyMeters { get; set; }
+    public int? OvertimeMinutes { get; set; }
     public required string Verification { get; set; }
 }

@@ -33,6 +33,7 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
                 record.Latitude,
                 record.Longitude,
                 record.AccuracyMeters,
+                record.OvertimeMinutes,
                 record.Verification);
         return Ok(await query.Take(200).ToListAsync(ct));
     }
@@ -50,6 +51,15 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
         var latitude = configuration.GetValue<double>("Office:Latitude");
         var longitude = configuration.GetValue<double>("Office:Longitude");
         var distance = DistanceMeters(request.Latitude, request.Longitude, latitude, longitude);
+        var localTime = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, TimeZoneInfo.FindSystemTimeZoneById("Asia/Ho_Chi_Minh"));
+        int? overtimeMinutes = null;
+        if (request.Type.Equals("checkOut", StringComparison.OrdinalIgnoreCase))
+        {
+            var shiftEnd = new TimeSpan(17, 0, 0);
+            overtimeMinutes = localTime.TimeOfDay > shiftEnd
+                ? (int)(localTime.TimeOfDay - shiftEnd).TotalMinutes
+                : 0;
+        }
 
         var record = new AttendanceRecord
         {
@@ -62,6 +72,7 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
             AccuracyMeters = request.AccuracyMeters is > 0 and var accuracy && double.IsFinite(accuracy)
                 ? accuracy
                 : null,
+            OvertimeMinutes = overtimeMinutes,
             Verification = "QR công ty + GPS"
         };
         db.AttendanceRecords.Add(record);
@@ -118,4 +129,5 @@ public sealed record AttendanceHistoryDto(
     double Latitude,
     double Longitude,
     double? AccuracyMeters,
+    int? OvertimeMinutes,
     string Verification);

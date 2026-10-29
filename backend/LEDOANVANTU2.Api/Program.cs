@@ -97,6 +97,8 @@ static async Task EnsureAttendanceLocationColumnsAsync(AppDbContext db, bool isP
             ADD COLUMN IF NOT EXISTS "Latitude" double precision NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS "Longitude" double precision NOT NULL DEFAULT 0,
             ADD COLUMN IF NOT EXISTS "AccuracyMeters" double precision NULL;
+            ALTER TABLE "AttendanceRecords"
+            ADD COLUMN IF NOT EXISTS "OvertimeMinutes" integer NULL;
             """);
         return;
     }
@@ -108,6 +110,8 @@ static async Task EnsureAttendanceLocationColumnsAsync(AppDbContext db, bool isP
             ALTER TABLE [dbo].[AttendanceRecords] ADD [Longitude] float NOT NULL CONSTRAINT [DF_AttendanceRecords_Longitude] DEFAULT (0);
         IF COL_LENGTH(N'dbo.AttendanceRecords', N'AccuracyMeters') IS NULL
             ALTER TABLE [dbo].[AttendanceRecords] ADD [AccuracyMeters] float NULL;
+        IF COL_LENGTH(N'dbo.AttendanceRecords', N'OvertimeMinutes') IS NULL
+            ALTER TABLE [dbo].[AttendanceRecords] ADD [OvertimeMinutes] int NULL;
         """);
 }
 
