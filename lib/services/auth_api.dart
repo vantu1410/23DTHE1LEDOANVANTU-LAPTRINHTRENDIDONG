@@ -57,7 +57,8 @@ class AuthApi {
           },
           body: jsonEncode(body),
         )
-        .timeout(const Duration(seconds: 15));
+        // Render's free instance can take 50+ seconds to wake after idle.
+        .timeout(const Duration(seconds: 90));
     final decoded = response.bodyBytes.isEmpty
         ? <String, dynamic>{}
         : jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>;

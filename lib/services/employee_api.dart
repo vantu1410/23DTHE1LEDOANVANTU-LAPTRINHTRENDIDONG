@@ -24,7 +24,7 @@ class EmployeeApi {
   Future<List<Employee>> getAll() async {
     final response = await _client
         .get(_employeesUri, headers: _jsonHeaders)
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 90));
     _check(response);
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! List) {
@@ -45,7 +45,7 @@ class EmployeeApi {
           headers: _jsonHeaders,
           body: jsonEncode(employee.toJson()),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 90));
     _check(response);
     if (response.bodyBytes.isEmpty) return employee;
     return Employee.fromJson(
@@ -63,7 +63,7 @@ class EmployeeApi {
           headers: _jsonHeaders,
           body: jsonEncode(employee.toJson()),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 90));
     _check(response);
     return employee;
   }
@@ -74,7 +74,7 @@ class EmployeeApi {
     }
     final response = await _client
         .delete(_baseUri.resolve('api/EmployeeApi/$id'), headers: _jsonHeaders)
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 90));
     _check(response);
   }
 

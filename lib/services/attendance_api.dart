@@ -33,14 +33,14 @@ class AttendanceApi {
             'biometricVerified': true,
           }),
         )
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 90));
     _check(response);
   }
 
   Future<List<PunchRecord>> getHistory() async {
     final response = await _client
         .get(_uri, headers: _headers)
-        .timeout(const Duration(seconds: 15));
+        .timeout(const Duration(seconds: 90));
     _check(response);
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! List) return [];
