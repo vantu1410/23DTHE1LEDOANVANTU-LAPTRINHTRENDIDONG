@@ -350,6 +350,25 @@ public sealed class EmployeeRegistrationTests : IAsyncLifetime
         Assert.Empty(await db.Employees.ToListAsync());
     }
 
+    [Fact]
+    public async Task Logout_revokes_the_current_token_and_never_stores_the_token_itself()
+    {
+        var user = await UserWithOtp(purpose: "login", verified: true);
+        var auth = Auth();
+        auth.ControllerContext = new ControllerContext { HttpContext = new Microsoft.AspNetCore.Http.DefaultHttpContext() };
+        auth.HttpContext.User = new System.Security.Claims.ClaimsPrincipal(new System.Security.Claims.ClaimsIdentity(
+            new[] { new System.Security.Claims.Claim(System.Security.Claims.ClaimTypes.NameIdentifier, user.Id.ToString()) }, "test"));
+        auth.Request.Headers.Authorization = "Bearer sample-session-token";
+        Assert.True(await ApiSessions.IsActiveAsync(db, user.Id, "sample-session-token", default));
+        Assert.IsType<OkObjectResult>(await auth.Logout(default));
+        Assert.False(await ApiSessions.IsActiveAsync(db, user.Id, "sample-session-token", default));
+        Assert.True(await ApiSessions.IsActiveAsync(db, user.Id, "different-session-token", default));
+        Assert.IsType<OkObjectResult>(await auth.Logout(default));
+        var revoked = await db.FeatureRecords.SingleAsync();
+        Assert.NotEqual("sample-session-token", revoked.Data);
+        Assert.Equal(ApiSessions.Hash("sample-session-token"), revoked.Data);
+    }
+
     private async Task<AppUser> UserWithOtp(
         string purpose = "register", bool verified = false, bool expired = false, string role = "Employee")
     {

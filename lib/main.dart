@@ -24,6 +24,7 @@ import 'services/biometric_session.dart';
 import 'settings_page.dart';
 import 'schedule_requests_page.dart';
 import 'services/schedule_request_api.dart';
+import 'services/feature_api.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -555,6 +556,10 @@ class _HomePageState extends State<HomePage> {
   bool checkedOut = false;
   bool _punching = false;
   bool _loadingLocation = false;
+  bool _loggingOut = false;
+  FeatureApi? get _features => widget.accessToken == null || _apiBaseUrl.isEmpty
+      ? null
+      : FeatureApi(_apiBaseUrl, widget.accessToken!);
   final List<Employee> employees = [
     Employee('Nguyễn Minh Anh', 'Thiết kế', 'NV-002', present: true),
     Employee('Trần Quốc Bảo', 'Kỹ thuật', 'NV-003'),
@@ -574,6 +579,39 @@ class _HomePageState extends State<HomePage> {
         ? null
         : AttendanceApi(_apiBaseUrl, widget.accessToken!);
     if (_attendanceApi != null) _refreshHistory();
+    if (_features != null) _loadRemotePreferences();
+  }
+
+  Future<void> _loadRemotePreferences() async {
+    try {
+      await AppPreferences.instance.loadRemote(_features!);
+    } catch (error) {
+      if (mounted) _notice('Chưa tải được cài đặt tài khoản: $error');
+    }
+  }
+
+  Future<void> _logout() async {
+    if (_loggingOut) return;
+    setState(() => _loggingOut = true);
+    try {
+      if (_features != null) {
+        try {
+          await _features!.request('POST', 'Auth/logout');
+        } on FeatureApiException catch (error) {
+          if (error.statusCode != 401) rethrow;
+        }
+      }
+      await BiometricSession.clear();
+      if (!mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginPage()),
+        (r) => false,
+      );
+    } catch (error) {
+      if (mounted) _notice('Chưa đăng xuất được: $error');
+    } finally {
+      if (mounted) setState(() => _loggingOut = false);
+    }
   }
 
   Future<void> _refreshEmployees() async {
@@ -1823,9 +1861,9 @@ class _HomePageState extends State<HomePage> {
         Icons.speed_rounded,
         'Đo áp suất không khí',
         'Cảm biến khí áp · Mục d',
-        () => Navigator.of(
-          context,
-        ).push(MaterialPageRoute(builder: (_) => const PressureSensorPage())),
+        () => Navigator.of(context).push(
+          MaterialPageRoute(builder: (_) => PressureSensorPage(api: _features)),
+        ),
       ),
       _setting(
         Icons.help_outline,
@@ -1835,12 +1873,9 @@ class _HomePageState extends State<HomePage> {
       ),
       const SizedBox(height: 8),
       OutlinedButton.icon(
-        onPressed: () => Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const LoginPage()),
-          (r) => false,
-        ),
+        onPressed: _loggingOut ? null : _logout,
         icon: const Icon(Icons.logout_rounded),
-        label: const Text('Đăng xuất'),
+        label: Text(_loggingOut ? 'Đang đăng xuất…' : 'Đăng xuất'),
         style: OutlinedButton.styleFrom(
           foregroundColor: const Color(0xFFE07E78),
           padding: const EdgeInsets.all(15),
@@ -1918,7 +1953,7 @@ class _HomePageState extends State<HomePage> {
             }
             return true;
           },
-          disable: BiometricSession.clear,
+          disable: () => BiometricSession.disable(session, _apiBaseUrl),
         ),
       ),
     );
@@ -2173,7 +2208,7 @@ class _HomePageState extends State<HomePage> {
       if (!mounted) return;
       final latitude = position.latitude.toStringAsFixed(6);
       final longitude = position.longitude.toStringAsFixed(6);
-      final mapsLink = 'https://www.google.com/maps?q=$latitude,$longitude';
+      var mapsLink = 'https://www.google.com/maps?q=$latitude,$longitude';
       await showDialog<void>(
         context: context,
         builder: (dialogContext) => AlertDialog(
@@ -2202,6 +2237,21 @@ class _HomePageState extends State<HomePage> {
               onPressed: () async {
                 Navigator.pop(dialogContext);
                 try {
+                  if (_features != null) {
+                    final result = await _features!.request(
+                      'POST',
+                      'Locations',
+                      {
+                        'latitude': position.latitude,
+                        'longitude': position.longitude,
+                        'accuracyMeters':
+                            position.accuracy.isFinite && position.accuracy > 0
+                            ? position.accuracy
+                            : null,
+                      },
+                    );
+                    mapsLink = result['mapsUrl'] as String;
+                  }
                   await SharePlus.instance.share(
                     ShareParams(text: 'Vị trí hiện tại của tôi: $mapsLink'),
                   );
@@ -2420,7 +2470,8 @@ class _HomePageState extends State<HomePage> {
 }
 
 class PressureSensorPage extends StatefulWidget {
-  const PressureSensorPage({super.key});
+  const PressureSensorPage({super.key, this.api});
+  final FeatureApi? api;
 
   @override
   State<PressureSensorPage> createState() => _PressureSensorPageState();
@@ -2435,6 +2486,41 @@ class _PressureSensorPageState extends State<PressureSensorPage>
   bool _backgrounded = false;
   int _generation = 0;
   final List<PressureSample> _recentReadings = [];
+  Map<String, dynamic>? _serverStatistics;
+  String? _syncError;
+  bool _syncing = false;
+  DateTime? _lastSynced;
+
+  Future<void> _syncPressure(int generation) async {
+    if (widget.api == null || _syncing || _recentReadings.isEmpty) return;
+    final now = DateTime.now();
+    if (_lastSynced != null &&
+        now.difference(_lastSynced!) < const Duration(seconds: 5)) {
+      return;
+    }
+    _syncing = true;
+    _lastSynced = now;
+    final values = _recentReadings.map((r) => r.value).toList();
+    try {
+      final result = await widget.api!.request('POST', 'Pressure', {
+        'values': values
+            .skip(values.length > 600 ? values.length - 600 : 0)
+            .toList(),
+      });
+      if (mounted && generation == _generation) {
+        setState(() {
+          _serverStatistics = Map<String, dynamic>.from(result);
+          _syncError = null;
+        });
+      }
+    } catch (error) {
+      if (mounted && generation == _generation) {
+        setState(() => _syncError = error.toString());
+      }
+    } finally {
+      _syncing = false;
+    }
+  }
 
   @override
   void initState() {
@@ -2480,6 +2566,7 @@ class _PressureSensorPageState extends State<PressureSensorPage>
                 _pressureHpa = event.pressure;
                 _sensorUnavailable = false;
               });
+              _syncPressure(generation);
             },
             onError: (Object error) {
               if (mounted && generation == _generation) {
@@ -2506,6 +2593,8 @@ class _PressureSensorPageState extends State<PressureSensorPage>
   void _reset() {
     setState(() {
       _recentReadings.clear();
+      _serverStatistics = null;
+      _lastSynced = null;
       _pressureHpa = null;
       _sensorUnavailable = false;
       _paused = false;
@@ -2533,7 +2622,26 @@ class _PressureSensorPageState extends State<PressureSensorPage>
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(title: const Text('Đo áp suất không khí')),
+    appBar: AppBar(
+      title: const Text('Đo áp suất không khí'),
+      bottom: widget.api == null
+          ? null
+          : PreferredSize(
+              preferredSize: const Size.fromHeight(32),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  _syncError != null
+                      ? 'Chưa đồng bộ được API: $_syncError'
+                      : _serverStatistics == null
+                      ? 'Đang gửi dữ liệu lên API…'
+                      : 'Đã lưu và thống kê trên API',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ),
+    ),
     body: PressureDashboard(
       readings: List<PressureSample>.from(_recentReadings),
       current: _pressureHpa,
@@ -2541,6 +2649,7 @@ class _PressureSensorPageState extends State<PressureSensorPage>
       paused: _paused || _backgrounded,
       onPauseToggle: _togglePause,
       onReset: _reset,
+      statistics: _serverStatistics,
     ),
   );
 }

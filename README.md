@@ -11,7 +11,7 @@ Project Flutter mang tên cá nhân `LEDOANVANTU2`. Kho này chứa cả fronten
 - Đăng ký và xác nhận OTP thành công tự tạo hồ sơ nhân viên trong danh sách của admin. Nếu đã có hồ sơ thủ công khớp họ tên/email, hệ thống dùng lại hồ sơ đó.
 - Admin thêm thủ công có thể tạo cả tài khoản đăng nhập bằng tên đăng nhập và mật khẩu ban đầu; nhân viên đăng nhập bằng tên đăng nhập hoặc email rồi xác nhận OTP, không cần đăng ký lại.
 - Tài khoản đã xác nhận được liên kết theo họ tên/email mà không đổi mật khẩu; cập nhật số nhân viên có mặt từ lượt chấm công thực tế.
-- Cả nhân viên và quản trị viên có mục **Quét / đăng ký khuôn mặt** tại Tổng quan và Tài khoản; có thể đăng ký, kiểm tra và tắt đăng nhập bằng khuôn mặt trên thiết bị này.
+- Cả nhân viên và quản trị viên có mục **Quét / đăng ký khuôn mặt** tại Tổng quan và Tài khoản; camera trích đặc trưng, API mã hóa mẫu và đối chiếu khuôn mặt trong phiên OTP còn hiệu lực.
 - Cài đặt đổi cỡ chữ, màu nền và cập nhật họ tên; họ tên được đồng bộ với hồ sơ nhân viên đã liên kết.
 - Biểu đồ áp suất trong 5 phút, thống kê thấp nhất/cao nhất/trung bình, tạm dừng và đo lại.
 - Gửi và duyệt đơn xin đi muộn/về sớm; xem trạng thái và đối chiếu với lịch sử chấm công.
@@ -35,7 +35,17 @@ App mặc định kết nối API đã deploy tại Render. Nếu nhóm có API 
 
 Khi API đã deploy, nhân viên đăng ký bằng email, username và mật khẩu; backend gửi OTP qua email. Đăng nhập dùng username, mật khẩu và OTP. Vai trò nhận từ token backend; tài khoản mới là `Employee`. Tài khoản admin được khởi tạo riêng bằng các biến `BootstrapAdmin__...` trên Render.
 
-Sau khi đăng nhập bằng mật khẩu và OTP, có thể đăng ký khuôn mặt để đăng nhập lại trên thiết bị đã đăng ký khi phiên API còn hiệu lực. Phiên hết hạn sau 8 giờ thì cần đăng nhập OTP lại. Nhận diện camera hiện phục vụ demo, chưa có cơ chế chống ảnh/video giả mạo; mẫu khuôn mặt và phiên đăng nhập được lưu mã hóa trên thiết bị. Trên giả lập, cấu hình camera trước dùng webcam laptop; GPS và áp suất của giả lập là dữ liệu mô phỏng.
+Sau khi đăng nhập bằng mật khẩu và OTP, có thể đăng ký khuôn mặt để mở lại phiên trên thiết bị đã đăng ký khi phiên API còn hiệu lực. Phiên hết hạn sau 8 giờ, đã đăng xuất hoặc sai khuôn mặt 5 lần thì cần đăng nhập OTP lại. Camera trích đặc trưng, API mã hóa mẫu bằng AES-GCM và so sánh đặc trưng; thiết bị chỉ giữ thông tin phiên trong secure storage. Đây là nhận diện camera phục vụ demo, chưa có cơ chế chống ảnh/video giả mạo. Trên giả lập, cấu hình camera trước dùng webcam laptop; GPS và áp suất của giả lập là dữ liệu mô phỏng.
+
+### API cho chức năng thiết bị và đăng xuất
+
+- `POST /api/Auth/logout`: vô hiệu hóa token hiện tại; token đó bị từ chối trên các API yêu cầu đăng nhập.
+- `GET /api/Face`, `POST /api/Face/enroll`, `POST /api/Face/verify`, `DELETE /api/Face`: trạng thái, đăng ký, đối chiếu và xóa mẫu khuôn mặt. Cần token OTP còn hiệu lực, không cấp mới hay gia hạn token bằng mẫu khuôn mặt.
+- `GET/POST /api/Locations`: lịch sử vị trí của tài khoản, lưu GPS/sai số và tạo liên kết Google Maps để Flutter mở bảng chia sẻ của hệ điều hành.
+- `GET/POST /api/Pressure`: lưu cửa sổ số đo tối đa 600 mẫu, tính thấp nhất/cao nhất/trung bình và cảnh báo biến động từ 2 hPa; Flutter đồng bộ cửa sổ 5 phút khi đang đo.
+- `GET/PUT /api/Settings`: lưu và tải cỡ chữ, màu nền theo tài khoản. Trong Cài đặt, bấm **Lưu giao diện vào tài khoản** sau khi chọn.
+
+Swagger có nút **Authorize**: nhập `accessToken` sau khi xác nhận OTP để thử các API có khóa. Camera, GPS và cảm biến vẫn thu dữ liệu trên điện thoại; xử lý/lưu dữ liệu của các mục trên đã nối với backend. Các API này chỉ trả dữ liệu của tài khoản đang đăng nhập. Không cần đổi link Swagger đã nộp khi triển khai bản mới.
 
 ### Thêm nhân viên và tài khoản
 

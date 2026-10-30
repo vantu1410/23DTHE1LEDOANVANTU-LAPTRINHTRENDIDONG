@@ -6,6 +6,7 @@ namespace LEDOANVANTU2.Api.Data;
 public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbContext(options)
 {
     public DbSet<AppUser> Users => Set<AppUser>();
+    public DbSet<FeatureRecord> FeatureRecords => Set<FeatureRecord>();
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
     public DbSet<ScheduleRequest> ScheduleRequests => Set<ScheduleRequest>();

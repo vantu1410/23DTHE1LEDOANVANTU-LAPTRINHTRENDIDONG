@@ -8,6 +8,7 @@ using LEDOANVANTU2.Api.Models;
 using LEDOANVANTU2.Api.Services;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.IdentityModel.Tokens;
 
@@ -22,6 +23,23 @@ public sealed class AuthController(
     IConfiguration configuration,
     IWebHostEnvironment environment) : ControllerBase
 {
+    [Authorize]
+    [HttpPost("logout")]
+    public async Task<IActionResult> Logout(CancellationToken ct)
+    {
+        var token = Request.Headers.Authorization.ToString();
+        if (!token.StartsWith("Bearer ", StringComparison.OrdinalIgnoreCase) ||
+            !int.TryParse(User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("sub"), out var id))
+            return Unauthorized();
+        var hash = ApiSessions.Hash(token[7..].Trim());
+        if (!await db.FeatureRecords.AnyAsync(r => r.UserId == id && r.Kind == "revoked-token" && r.Data == hash, ct))
+        {
+            db.FeatureRecords.Add(new FeatureRecord { UserId = id, Kind = "revoked-token", Data = hash });
+            await db.SaveChangesAsync(ct);
+        }
+        return Ok(new { message = "Đã đăng xuất và vô hiệu hóa phiên đăng nhập." });
+    }
+
     [HttpPost("register")]
     public async Task<IActionResult> Register(RegisterRequest request, CancellationToken ct)
     {

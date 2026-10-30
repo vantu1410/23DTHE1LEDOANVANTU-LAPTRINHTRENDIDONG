@@ -183,7 +183,7 @@ class _FaceEnrollmentPageState extends State<FaceEnrollmentPage> {
                   : () => _run(() async {
                       await widget.disable();
                       return true;
-                    }, 'Đã tắt đăng nhập khuôn mặt trên thiết bị này.'),
+                    }, 'Đã tắt đăng nhập khuôn mặt của tài khoản.'),
               child: const Text('Tắt đăng nhập khuôn mặt'),
             ),
           if (_busy)
@@ -214,7 +214,7 @@ class _FaceEnrollmentPageState extends State<FaceEnrollmentPage> {
             ),
           const SizedBox(height: 14),
           const Text(
-            'Mẫu khuôn mặt lưu mã hóa trên thiết bị. Khi đổi tài khoản hoặc phiên hết hạn, hãy đăng nhập OTP và đăng ký lại. Nhận diện camera phục vụ bài demo, chưa chống ảnh/video giả mạo.',
+            'Mẫu khuôn mặt được mã hóa và đối chiếu trên API. Khi phiên hết hạn hoặc đã đăng xuất, hãy đăng nhập OTP trước khi đăng ký lại. Nhận diện camera phục vụ bài demo, chưa chống ảnh/video giả mạo.',
             style: TextStyle(
               color: Color(0xFFA0A9B6),
               fontSize: 12,

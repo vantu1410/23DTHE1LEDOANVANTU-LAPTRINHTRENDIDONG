@@ -7,6 +7,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:face_detection_tflite/face_detection_tflite.dart';
 
 import 'auth_api.dart';
+import 'feature_api.dart';
 
 class BiometricSession {
   static const _storage = FlutterSecureStorage();
@@ -52,10 +53,17 @@ class BiometricSession {
     if (raw == null) return false;
     try {
       final data = jsonDecode(raw) as Map<String, dynamic>;
-      return data['baseUrl'] == baseUrl &&
+      final localEnabled =
+          data['baseUrl'] == baseUrl &&
           data['id'] == session.userId &&
           data['token'] == session.token &&
           !_expired(session.token);
+      if (!localEnabled) return false;
+      final status = await FeatureApi(
+        baseUrl,
+        session.token,
+      ).request('GET', 'Face');
+      return status['enabled'] == true;
     } catch (_) {
       return false;
     }
@@ -76,6 +84,10 @@ class BiometricSession {
         'Phiên đã hết hạn. Vui lòng đăng nhập lại bằng OTP trước khi đăng ký khuôn mặt.',
       );
     }
+    await FeatureApi(
+      baseUrl,
+      session.token,
+    ).request('POST', 'Face/enroll', {'embedding': _enrollment!.toList()});
     await _storage.write(
       key: 'tutime.face',
       value: jsonEncode({
@@ -85,8 +97,6 @@ class BiometricSession {
         'username': session.username,
         'id': session.userId,
         'role': session.role,
-        'embedding': _enrollment!.toList(),
-        'attempts': 0,
       }),
     );
     _enrollment = null;
@@ -114,24 +124,10 @@ class BiometricSession {
     }
     final embedding = await capture();
     if (embedding == null) return null;
-    final reference = Float32List.fromList(
-      (data['embedding'] as List).map((v) => (v as num).toDouble()).toList(),
-    );
-    final similarity = FaceDetector.compareFaces(reference, embedding);
-    if (!similarity.isFinite || similarity < .70) {
-      final attempts = (data['attempts'] as int? ?? 0) + 1;
-      if (attempts >= 5) {
-        await clear();
-      } else {
-        data['attempts'] = attempts;
-        await _storage.write(key: 'tutime.face', value: jsonEncode(data));
-      }
-      throw Exception(
-        'Khuôn mặt không khớp. Sau 5 lần sai cần đăng nhập OTP lại.',
-      );
-    }
-    data['attempts'] = 0;
-    await _storage.write(key: 'tutime.face', value: jsonEncode(data));
+    await FeatureApi(
+      baseUrl,
+      token,
+    ).request('POST', 'Face/verify', {'embedding': embedding.toList()});
     return AuthSession(
       token: token,
       fullName: data['name'] as String,
@@ -139,5 +135,10 @@ class BiometricSession {
       userId: data['id'] as int?,
       role: data['role'] as String,
     );
+  }
+
+  static Future<void> disable(AuthSession session, String baseUrl) async {
+    await FeatureApi(baseUrl, session.token).request('DELETE', 'Face');
+    await clear();
   }
 }

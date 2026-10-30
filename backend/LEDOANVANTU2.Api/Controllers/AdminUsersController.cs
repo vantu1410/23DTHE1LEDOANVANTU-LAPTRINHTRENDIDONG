@@ -54,6 +54,7 @@ public sealed class AdminUsersController(AppDbContext db) : ControllerBase
         }
 
         await db.AttendanceRecords.Where(x => x.UserId == id).ExecuteDeleteAsync(ct);
+        await db.FeatureRecords.Where(x => x.UserId == id).ExecuteDeleteAsync(ct);
         await db.Employees.Where(x => x.UserId == id).ExecuteUpdateAsync(s => s.SetProperty(x => x.UserId, (int?)null), ct);
         db.Users.Remove(user);
         try

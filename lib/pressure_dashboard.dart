@@ -17,6 +17,7 @@ class PressureDashboard extends StatelessWidget {
     required this.paused,
     required this.onPauseToggle,
     required this.onReset,
+    this.statistics,
   });
 
   final List<PressureSample> readings;
@@ -25,6 +26,7 @@ class PressureDashboard extends StatelessWidget {
   final bool paused;
   final VoidCallback onPauseToggle;
   final VoidCallback onReset;
+  final Map<String, dynamic>? statistics;
 
   static const _gold = Color(0xFFD2AE68);
   static const _green = Color(0xFF52C49A);
@@ -46,15 +48,18 @@ class PressureDashboard extends StatelessWidget {
     final value = current != null && current!.isFinite && current! > 0
         ? current
         : null;
-    final min = samples.isEmpty
-        ? null
-        : samples.map((r) => r.value).reduce(math.min);
-    final max = samples.isEmpty
-        ? null
-        : samples.map((r) => r.value).reduce(math.max);
-    final average = samples.isEmpty
-        ? null
-        : samples.fold<double>(0, (sum, r) => sum + r.value) / samples.length;
+    final min =
+        (statistics?['minimum'] as num?)?.toDouble() ??
+        (samples.isEmpty ? null : samples.map((r) => r.value).reduce(math.min));
+    final max =
+        (statistics?['maximum'] as num?)?.toDouble() ??
+        (samples.isEmpty ? null : samples.map((r) => r.value).reduce(math.max));
+    final average =
+        (statistics?['average'] as num?)?.toDouble() ??
+        (samples.isEmpty
+            ? null
+            : samples.fold<double>(0, (sum, r) => sum + r.value) /
+                  samples.length);
     final change = samples.length < 2
         ? null
         : samples.last.value - samples.first.value;

@@ -6,6 +6,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import 'services/auth_api.dart';
 import 'services/biometric_session.dart';
+import 'services/feature_api.dart';
 
 class AppPreferences extends ChangeNotifier {
   static final instance = AppPreferences();
@@ -24,6 +25,14 @@ class AppPreferences extends ChangeNotifier {
     final p = await SharedPreferences.getInstance();
     await p.setDouble('textScale', value);
     await p.setInt('background', color);
+  }
+
+  Future<void> loadRemote(FeatureApi api) async {
+    final data = await api.request('GET', 'Settings');
+    await change(
+      (data['textScale'] as num).toDouble(),
+      (data['background'] as num).toInt(),
+    );
   }
 }
 
@@ -46,6 +55,23 @@ class SettingsPage extends StatefulWidget {
 class _SettingsPageState extends State<SettingsPage> {
   late final name = TextEditingController(text: widget.session.fullName);
   bool busy = false;
+  Future<void> saveAppearance() async {
+    setState(() => busy = true);
+    try {
+      final prefs = AppPreferences.instance;
+      await FeatureApi(widget.baseUrl, widget.session.token).request(
+        'PUT',
+        'Settings',
+        {'textScale': prefs.scale, 'background': prefs.background},
+      );
+      message('Đã lưu cỡ chữ và màu nền trên tài khoản.');
+    } catch (error) {
+      message(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
+  }
+
   void message(String text) {
     if (mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(text)));
@@ -140,6 +166,11 @@ class _SettingsPageState extends State<SettingsPage> {
                   )
                   .toList(),
             ),
+            FilledButton.icon(
+              onPressed: busy ? null : saveAppearance,
+              icon: const Icon(Icons.cloud_upload_outlined),
+              label: const Text('Lưu giao diện vào tài khoản'),
+            ),
             const Divider(height: 36),
             const Text('Đăng nhập bằng khuôn mặt'),
             const Text(
@@ -152,7 +183,7 @@ class _SettingsPageState extends State<SettingsPage> {
             ),
             const Divider(height: 36),
             const Text(
-              'Nhận diện camera dành cho bài demo, chưa có chống ảnh/video giả mạo. Mẫu khuôn mặt lưu mã hóa trên thiết bị.',
+              'Nhận diện camera dành cho bài demo, chưa có chống ảnh/video giả mạo. Mẫu khuôn mặt được mã hóa và đối chiếu trên API.',
             ),
             const Text('Hồ sơ cá nhân'),
             const SizedBox(height: 12),
