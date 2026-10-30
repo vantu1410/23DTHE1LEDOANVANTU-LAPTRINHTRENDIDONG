@@ -71,13 +71,15 @@ class AttendanceApi {
         longitude: longitude,
         accuracyMeters: accuracy,
         distanceFromOfficeMeters: distance,
+        overtimeMinutes: (json['overtimeMinutes'] as num?)?.toInt(),
+        approvalLabel: json['approvalLabel'] as String?,
       );
     }).toList();
   }
 
   Future<void> cancelRecord(int id) async {
     final response = await _client
-        .delete(_uri.resolve('api/AttendanceApi/$id'), headers: _headers)
+        .delete(_baseUri.resolve('api/AttendanceApi/$id'), headers: _headers)
         .timeout(const Duration(seconds: 90));
     _check(response);
   }

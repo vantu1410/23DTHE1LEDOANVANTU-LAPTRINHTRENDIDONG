@@ -1,0 +1,29 @@
+Lê Đoàn Văn Tú
+LÊ ĐOÀN VĂN TÚ
+CÁC CHỨC NĂNG ĐÃ LÀM
+
+- Đăng ký tài khoản bằng email và xác nhận OTP.
+- Đăng nhập bằng tên đăng nhập, mật khẩu và OTP email.
+- Phân quyền Quản trị viên và Nhân viên.
+- Quản lý nhân viên: thêm, xem, sửa, xóa.
+- Quản lý tài khoản: xem, tìm kiếm, lọc và xóa tài khoản.
+- Chấm công vào ca và tan ca bằng QR.
+- Ghi nhận vị trí GPS, khoảng cách và độ chính xác khi chấm công.
+- Xem lịch sử chấm công; Admin có thể hủy lượt chấm công.
+- Tự tính thời gian tăng ca sau 17:00.
+- Chia sẻ vị trí hiện tại.
+- Đo áp suất không khí bằng cảm biến barometer.
+- Tạo và quét mã QR bằng camera hoặc từ ảnh đã lưu.
+- Giao diện dashboard cho nhân viên và màn hình quản trị cho Admin.
+- Đăng ký, kiểm tra và tắt đăng nhập bằng khuôn mặt cho Quản trị viên và Nhân viên.
+- Sau khi đăng nhập bằng mật khẩu và OTP, có thể đăng nhập lại bằng khuôn mặt trên thiết bị đã đăng ký khi phiên còn hiệu lực.
+- Cài đặt thay đổi cỡ chữ, màu nền và lưu lựa chọn trên thiết bị.
+- Cập nhật họ tên trong hồ sơ cá nhân, đồng bộ với hồ sơ nhân viên đã liên kết.
+- Liên kết nhân viên do Admin thêm với tài khoản đăng ký khi họ tên và email khớp nhau.
+- Cập nhật số nhân viên có mặt và tổng giờ làm theo dữ liệu chấm công thực tế.
+- Biểu đồ áp suất trong 5 phút, thống kê thấp nhất, cao nhất, trung bình; tạm dừng và đo lại.
+- Nhân viên gửi đơn xin đi muộn hoặc về sớm theo ngày, thời gian và lý do.
+- Quản trị viên xem, duyệt hoặc từ chối đơn; nhân viên xem trạng thái xử lý.
+- Hiển thị trạng thái đi muộn/về sớm đã được duyệt trong lịch sử chấm công khi đúng thời gian cho phép.
+
+9/10 điểm

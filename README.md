@@ -2,20 +2,38 @@
 
 TuTime là ứng dụng Flutter chấm công cho nhân viên. Ba chức năng trình bày đã chọn là **chia sẻ vị trí GPS (b)**, **đo áp suất khí quyển (d)** và **nhận diện QR (e)**. Nhân viên quét QR cố định của công ty; app lưu tọa độ, sai số GPS và khoảng cách tới văn phòng. Bán kính không chặn lượt chấm công.
 
-**Tính năng đề xuất:** Đối soát chấm công theo độ tin cậy GPS. Lượt ở xa văn phòng hoặc GPS có sai số lớn được đánh dấu cho admin kiểm tra; admin có thể hủy lượt. Nhân viên vẫn được chấm công ở mọi khoảng cách.
+**Tính năng đề xuất:** Xin đi muộn/về sớm. Nhân viên gửi đơn theo ngày, thời gian và lý do; admin duyệt hoặc từ chối. Lịch sử chấm công hiển thị nhãn khi lượt vào/tan ca phù hợp với đơn đã được duyệt.
 
-Project Flutter mang tên cá nhân `LEDOANVANTU2`. Mã Flutter nằm trong `lib/`; API ASP.NET Core nằm trong `backend/LEDOANVANTU2.Api/`. Thư mục `app/` ở gốc là project Kotlin ban đầu, được giữ lại làm bản gốc tham khảo; ứng dụng Flutter Android được build từ `android/`.
+Project Flutter mang tên cá nhân `LEDOANVANTU2`. Kho này chứa cả frontend Flutter trong `lib/` và backend ASP.NET Core trong `backend/LEDOANVANTU2.Api/`. Ứng dụng Flutter Android được build từ `android/`.
+
+## Các chức năng đã bổ sung
+
+- Liên kết hồ sơ nhân viên do admin thêm với tài khoản đăng ký theo họ tên và email; cập nhật số nhân viên có mặt từ lượt chấm công thực tế.
+- Cả nhân viên và quản trị viên có mục **Quét / đăng ký khuôn mặt** tại Tổng quan và Tài khoản; có thể đăng ký, kiểm tra và tắt đăng nhập bằng khuôn mặt trên thiết bị này.
+- Cài đặt đổi cỡ chữ, màu nền và cập nhật họ tên; họ tên được đồng bộ với hồ sơ nhân viên đã liên kết.
+- Biểu đồ áp suất trong 5 phút, thống kê thấp nhất/cao nhất/trung bình, tạm dừng và đo lại.
+- Gửi và duyệt đơn xin đi muộn/về sớm; xem trạng thái và đối chiếu với lịch sử chấm công.
+- Sửa luồng lưu nhân viên, hủy chấm công và tính tổng giờ làm theo dữ liệu thực tế.
+
+Danh sách chức năng ngắn gọn nằm trong [Lê Đoàn Văn Tú.txt](L%C3%AA%20%C4%90o%C3%A0n%20V%C4%83n%20T%C3%BA.txt). Điểm trong file là tự đánh giá tham khảo.
 
 ## Chạy Flutter
 
+Đặt dự án ở đường dẫn không dấu, ví dụ `C:\Projects\TuTime`, để tránh lỗi đường dẫn của Java/aapt trên Windows. Khởi động giả lập và dùng `flutter devices` kiểm tra mã thiết bị trước khi chạy:
+
 ```powershell
 flutter pub get
-flutter run --dart-define=OFFICE_LAT=10.7769 --dart-define=OFFICE_LNG=106.7009
+flutter devices
+flutter run -d emulator-5554 --dart-define=API_BASE_URL=https://ledoanvantu2-api.onrender.com --dart-define=OFFICE_LAT=10.7769 --dart-define=OFFICE_LNG=106.7009 --dart-define=OFFICE_RADIUS_M=150
 ```
+
+Thay `emulator-5554` bằng mã thiết bị thực tế. Không thêm dấu `\` ở cuối lệnh PowerShell và chỉ chạy một phiên `flutter run` cho cùng thiết bị. Cấu hình debug tắt Impeller; Gradle giới hạn heap 3 GB và tự dừng daemon sau 2 phút không hoạt động để giảm tải khi chạy giả lập.
 
 App mặc định kết nối API đã deploy tại Render. Nếu nhóm có API riêng, truyền `--dart-define=API_BASE_URL=https://...` khi chạy/build. Chế độ demo ngoại tuyến chỉ bật khi chủ động truyền `--dart-define=API_BASE_URL=`; dữ liệu demo không tạo tài khoản thật và CRUD chỉ lưu trong bộ nhớ.
 
 Khi API đã deploy, nhân viên đăng ký bằng email, username và mật khẩu; backend gửi OTP qua email. Đăng nhập dùng username, mật khẩu và OTP. Vai trò nhận từ token backend; tài khoản mới là `Employee`. Tài khoản admin được khởi tạo riêng bằng các biến `BootstrapAdmin__...` trên Render.
+
+Sau khi đăng nhập bằng mật khẩu và OTP, có thể đăng ký khuôn mặt để đăng nhập lại trên thiết bị đã đăng ký khi phiên API còn hiệu lực. Phiên hết hạn sau 8 giờ thì cần đăng nhập OTP lại. Nhận diện camera hiện phục vụ demo, chưa có cơ chế chống ảnh/video giả mạo; mẫu khuôn mặt và phiên đăng nhập được lưu mã hóa trên thiết bị. Trên giả lập, cấu hình camera trước dùng webcam laptop; GPS và áp suất của giả lập là dữ liệu mô phỏng.
 
 Admin mở **Tài khoản → Mã QR công ty cố định** để hiển thị mã. Nhân viên có thể quét bằng camera, chọn ảnh QR đã lưu, hoặc trong một giả lập dùng nút **Dùng QR demo đã lưu trong app** để kiểm tra giải mã ảnh QR. QR cố định có thể bị sao chép; app lưu GPS và khoảng cách để admin đối soát, không chặn theo bán kính. Tọa độ văn phòng hiện dùng là tọa độ mẫu ở TP.HCM (`10.7769`, `106.7009`); thay `Office__Latitude`, `Office__Longitude` trên Render và dùng cùng giá trị `OFFICE_LAT`/`OFFICE_LNG` khi build APK để tính khoảng cách chính xác.
 

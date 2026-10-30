@@ -12,6 +12,8 @@ class PunchRecord {
     this.longitude,
     this.accuracyMeters,
     this.distanceFromOfficeMeters,
+    this.overtimeMinutes,
+    this.approvalLabel,
   });
 
   final String action;
@@ -26,4 +28,6 @@ class PunchRecord {
   final double? longitude;
   final double? accuracyMeters;
   final double? distanceFromOfficeMeters;
+  final int? overtimeMinutes;
+  final String? approvalLabel;
 }

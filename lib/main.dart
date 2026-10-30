@@ -9,21 +9,37 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:sensors_plus/sensors_plus.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'models/employee.dart';
+import 'employee_editor_dialog.dart';
+import 'face_enrollment_page.dart';
+import 'pressure_dashboard.dart';
 import 'models/punch_record.dart';
 import 'services/attendance_api.dart';
 import 'services/admin_user_api.dart';
 import 'services/auth_api.dart';
 import 'services/employee_api.dart';
+import 'services/biometric_session.dart';
+import 'settings_page.dart';
+import 'schedule_requests_page.dart';
+import 'services/schedule_request_api.dart';
 
-void main() => runApp(const ChamCongApp());
+Future<void> main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await AppPreferences.instance.load();
+  runApp(const ChamCongApp());
+}
 
-const ink = Color(0xFF15243A);
-const navy = Color(0xFF142E50);
-const blue = Color(0xFF3978F6);
-const canvas = Color(0xFFF4F7FB);
-const green = Color(0xFF18A979);
+const ink = Color(0xFFF2F4F7);
+const navy = Color(0xFF171A20);
+const blue = Color(0xFFD2AE68);
+const canvas = Color(0xFF0B0D11);
+const surface = Color(0xFF14171D);
+const surfaceAlt = Color(0xFF1B1F27);
+const border = Color(0xFF2A3039);
+const muted = Color(0xFFA0A9B6);
+const green = Color(0xFF52C49A);
 const companyQrPayload = 'TUTIME:OFFICE:23DTHE1LEDOANVANTU-GROUP8';
 double _configuredNumber(String value, double fallback) {
   final normalized = value.trim().replaceFirst(RegExp(r'[\\/]+$'), '');
@@ -43,28 +59,78 @@ class ChamCongApp extends StatelessWidget {
   const ChamCongApp({super.key});
 
   @override
-  Widget build(BuildContext context) => MaterialApp(
-    debugShowCheckedModeBanner: false,
-    title: 'TuTime · Chấm công',
-    theme: ThemeData(
-      useMaterial3: true,
-      scaffoldBackgroundColor: canvas,
-      colorScheme: ColorScheme.fromSeed(seedColor: blue, primary: blue),
-      fontFamily: 'Roboto',
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(14),
-          borderSide: BorderSide.none,
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: AppPreferences.instance,
+    builder: (context, _) => MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'TuTime · Chấm công',
+      theme: ThemeData(
+        useMaterial3: true,
+        brightness: Brightness.dark,
+        scaffoldBackgroundColor: Color(AppPreferences.instance.background),
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: blue,
+          brightness: Brightness.dark,
+          primary: blue,
+          surface: surface,
         ),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 16,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: canvas,
+          foregroundColor: ink,
+          surfaceTintColor: Colors.transparent,
+        ),
+        cardTheme: const CardThemeData(
+          color: surface,
+          surfaceTintColor: Colors.transparent,
+        ),
+        navigationBarTheme: NavigationBarThemeData(
+          backgroundColor: surface,
+          indicatorColor: blue.withValues(alpha: .17),
+          iconTheme: WidgetStateProperty.resolveWith(
+            (states) => IconThemeData(
+              color: states.contains(WidgetState.selected) ? blue : muted,
+            ),
+          ),
+          labelTextStyle: WidgetStateProperty.resolveWith(
+            (states) => TextStyle(
+              color: states.contains(WidgetState.selected) ? blue : muted,
+              fontWeight: states.contains(WidgetState.selected)
+                  ? FontWeight.w700
+                  : FontWeight.w500,
+            ),
+          ),
+        ),
+        dialogTheme: const DialogThemeData(backgroundColor: surface),
+        fontFamily: 'Roboto',
+        inputDecorationTheme: InputDecorationTheme(
+          filled: true,
+          fillColor: surfaceAlt,
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: border),
+          ),
+          enabledBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: border),
+          ),
+          focusedBorder: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(14),
+            borderSide: const BorderSide(color: blue, width: 1.4),
+          ),
+          contentPadding: const EdgeInsets.symmetric(
+            horizontal: 16,
+            vertical: 16,
+          ),
         ),
       ),
+      builder: (context, child) => MediaQuery(
+        data: MediaQuery.of(context).copyWith(
+          textScaler: TextScaler.linear(AppPreferences.instance.scale),
+        ),
+        child: child!,
+      ),
+      home: const LoginPage(),
     ),
-    home: const LoginPage(),
   );
 }
 
@@ -104,6 +170,36 @@ class _LoginPageState extends State<LoginPage> {
     fullName.dispose();
     email.dispose();
     super.dispose();
+  }
+
+  Future<void> _faceLogin() async {
+    setState(() => busy = true);
+    try {
+      final session = await BiometricSession.unlock(_apiBaseUrl);
+      if (session == null || !mounted) return;
+      await AttendanceApi(_apiBaseUrl, session.token).getHistory();
+      if (!mounted) return;
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(
+          builder: (_) => HomePage(
+            role: session.role.toLowerCase() == 'admin'
+                ? 'Quản trị viên'
+                : 'Nhân viên',
+            name: session.fullName,
+            username: session.username,
+            userId: session.userId,
+            accessToken: session.token,
+          ),
+        ),
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(e.toString())));
+      }
+    } finally {
+      if (mounted) setState(() => busy = false);
+    }
   }
 
   Future<void> _continueAuth() async {
@@ -160,6 +256,7 @@ class _LoginPageState extends State<LoginPage> {
           user.text.trim(),
           otp.text.trim(),
         );
+        await BiometricSession.clear();
         displayRole = session.role.toLowerCase() == 'admin'
             ? 'Quản trị viên'
             : 'Nhân viên';
@@ -220,7 +317,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 32),
                 const Text(
                   'Xin chào 👋',
-                  style: TextStyle(fontSize: 16, color: Color(0xFF7D8BA0)),
+                  style: TextStyle(fontSize: 16, color: muted),
                 ),
                 const SizedBox(height: 8),
                 const Text(
@@ -235,7 +332,7 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 12),
                 const Text(
                   'Đăng nhập vào không gian làm việc của bạn.',
-                  style: TextStyle(color: Color(0xFF78869A), fontSize: 15),
+                  style: TextStyle(color: muted, fontSize: 15),
                 ),
                 const SizedBox(height: 30),
                 if (isRegistering && !showOtp) ...[
@@ -261,7 +358,7 @@ class _LoginPageState extends State<LoginPage> {
                   TextField(
                     controller: email,
                     keyboardType: TextInputType.emailAddress,
-                    autofillHints: const [AutofillHints.email],
+                    autofillHints: const <String>[],
                     decoration: const InputDecoration(
                       prefixIcon: Icon(Icons.email_outlined),
                       hintText: 'ten@congty.vn',
@@ -278,11 +375,7 @@ class _LoginPageState extends State<LoginPage> {
                   controller: user,
                   autocorrect: false,
                   enableSuggestions: false,
-                  autofillHints: [
-                    isRegistering
-                        ? AutofillHints.newUsername
-                        : AutofillHints.username,
-                  ],
+                  autofillHints: const <String>[],
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.person_outline),
                     hintText: 'Nhập tên đăng nhập',
@@ -298,11 +391,7 @@ class _LoginPageState extends State<LoginPage> {
                   controller: password,
                   obscureText: true,
                   enableSuggestions: false,
-                  autofillHints: [
-                    isRegistering
-                        ? AutofillHints.newPassword
-                        : AutofillHints.password,
-                  ],
+                  autofillHints: const <String>[],
                   decoration: const InputDecoration(
                     prefixIcon: Icon(Icons.lock_outline),
                     hintText: 'Nhập mật khẩu',
@@ -373,6 +462,12 @@ class _LoginPageState extends State<LoginPage> {
                     ),
                   ),
                 ),
+                if (!isRegistering && !showOtp)
+                  TextButton.icon(
+                    onPressed: busy ? null : _faceLogin,
+                    icon: const Icon(Icons.face),
+                    label: const Text('Đăng nhập bằng khuôn mặt'),
+                  ),
                 const SizedBox(height: 14),
                 Center(
                   child: TextButton(
@@ -407,7 +502,7 @@ class _LoginPageState extends State<LoginPage> {
                     'TU TIME  ·  CHẤM CÔNG THÔNG MINH',
                     style: TextStyle(
                       letterSpacing: 1.3,
-                      color: Color(0xFF9AA6B5),
+                      color: muted,
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                     ),
@@ -447,11 +542,14 @@ class _HomePageState extends State<HomePage> {
   );
   int tab = 0;
   bool showingAdminAttendance = false;
+  late String _displayName = widget.name;
   late final EmployeeApi? _employeeApi;
   late final AttendanceApi? _attendanceApi;
   String? _apiError;
   bool checkedIn = false;
   bool checkedOut = false;
+  bool _punching = false;
+  bool _loadingLocation = false;
   final List<Employee> employees = [
     Employee('Nguyễn Minh Anh', 'Thiết kế', 'NV-002', present: true),
     Employee('Trần Quốc Bảo', 'Kỹ thuật', 'NV-003'),
@@ -499,10 +597,13 @@ class _HomePageState extends State<HomePage> {
         records
           ..clear()
           ..addAll(remoteRecords);
-        if (remoteRecords.isNotEmpty) {
-          checkedIn = remoteRecords.first.action.contains('vào ca');
-          checkedOut = remoteRecords.first.action.contains('tan ca');
-        }
+        final today = remoteRecords.where(
+          (r) =>
+              r.userId == widget.userId &&
+              DateUtils.isSameDay(r.time, DateTime.now()),
+        );
+        checkedIn = today.any((r) => r.action.contains('vào ca'));
+        checkedOut = today.any((r) => r.action.contains('tan ca'));
       });
     } catch (error) {
       if (mounted) _notice(error.toString().replaceFirst('Exception: ', ''));
@@ -525,8 +626,8 @@ class _HomePageState extends State<HomePage> {
       bottomNavigationBar: NavigationBar(
         selectedIndex: tab,
         onDestinationSelected: (v) => setState(() => tab = v),
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFE5EDFF),
+        backgroundColor: surface,
+        indicatorColor: blue.withValues(alpha: .17),
         destinations: [
           const NavigationDestination(
             icon: Icon(Icons.grid_view_rounded),
@@ -558,7 +659,7 @@ class _HomePageState extends State<HomePage> {
             width: 44,
             height: 44,
             decoration: BoxDecoration(
-              color: const Color(0xFFE6EDFF),
+              color: surfaceAlt,
               borderRadius: BorderRadius.circular(14),
             ),
             child: const Icon(Icons.event_available_rounded, color: blue),
@@ -591,22 +692,19 @@ class _HomePageState extends State<HomePage> {
             ),
           ),
           CircleAvatar(
-            backgroundColor: const Color(0xFFDCE8FF),
+            backgroundColor: surfaceAlt,
             child: Text(
-              widget.name.isNotEmpty ? widget.name[0] : 'T',
+              _displayName.isNotEmpty ? _displayName[0] : 'T',
               style: const TextStyle(color: navy, fontWeight: FontWeight.bold),
             ),
           ),
         ],
       ),
       const SizedBox(height: 24),
-      Text(
-        _greeting(),
-        style: const TextStyle(color: Color(0xFF7B899C), fontSize: 14),
-      ),
+      Text(_greeting(), style: const TextStyle(color: muted, fontSize: 14)),
       const SizedBox(height: 4),
       Text(
-        widget.name,
+        _displayName,
         style: const TextStyle(
           fontSize: 23,
           color: ink,
@@ -641,21 +739,21 @@ class _HomePageState extends State<HomePage> {
           Expanded(
             child: _metric(
               'Giờ làm',
-              checkedIn ? '03h 24m' : '00h 00m',
+              _workedToday(),
               Icons.schedule_rounded,
-              const Color(0xFFEAF1FF),
+              surfaceAlt,
               blue,
             ),
           ),
           const SizedBox(width: 12),
           Expanded(
             child: _metric(
-              isAdmin ? 'Có mặt' : 'Đi muộn',
+              isAdmin ? 'Có mặt' : 'Tăng ca hôm nay',
               isAdmin
                   ? '${employees.where((e) => e.present).length}/${employees.length}'
-                  : '00 lần',
+                  : _todayOvertimeLabel(),
               isAdmin ? Icons.groups_rounded : Icons.timelapse_rounded,
-              const Color(0xFFE7F7F1),
+              const Color(0xFF172720),
               green,
             ),
           ),
@@ -663,6 +761,24 @@ class _HomePageState extends State<HomePage> {
       ),
       const SizedBox(height: 18),
       _locationCard(),
+      if (widget.accessToken != null) ...[
+        const SizedBox(height: 12),
+        _setting(
+          Icons.face_retouching_natural,
+          'Quét / đăng ký khuôn mặt',
+          'Bật đăng nhập khuôn mặt cho tài khoản của bạn',
+          _openFaceSetup,
+        ),
+      ],
+      const SizedBox(height: 12),
+      _setting(
+        Icons.event_available_outlined,
+        'Xin đi muộn / về sớm',
+        isAdmin
+            ? 'Xem và duyệt đơn xin phép của nhân viên'
+            : 'Gửi đơn và xem kết quả duyệt',
+        _openScheduleRequests,
+      ),
       if (isAdmin) ...[
         const SizedBox(height: 18),
         Row(
@@ -722,7 +838,7 @@ class _HomePageState extends State<HomePage> {
       color: navy,
       borderRadius: BorderRadius.circular(22),
       gradient: const LinearGradient(
-        colors: [Color(0xFF193A64), Color(0xFF24548A)],
+        colors: [Color(0xFF332A1B), Color(0xFF171A20)],
         begin: Alignment.topLeft,
         end: Alignment.bottomRight,
       ),
@@ -787,11 +903,11 @@ class _HomePageState extends State<HomePage> {
   Widget _checkInCard() => Container(
     padding: const EdgeInsets.all(18),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: surface,
       borderRadius: BorderRadius.circular(22),
       boxShadow: [
         BoxShadow(
-          color: const Color(0xFF193A64).withValues(alpha: .05),
+          color: const Color(0xFF55452B).withValues(alpha: .05),
           blurRadius: 20,
           offset: const Offset(0, 7),
         ),
@@ -815,15 +931,19 @@ class _HomePageState extends State<HomePage> {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
               decoration: BoxDecoration(
-                color: const Color(0xFFE9F8F2),
+                color: const Color(0xFF172720),
                 borderRadius: BorderRadius.circular(30),
               ),
-              child: const Row(
+              child: Row(
                 children: [
-                  Icon(Icons.circle, size: 7, color: green),
+                  const Icon(Icons.circle, size: 7, color: green),
                   SizedBox(width: 5),
                   Text(
-                    'ĐANG TRONG CA',
+                    checkedOut
+                        ? 'ĐÃ TAN CA'
+                        : checkedIn
+                        ? 'ĐANG TRONG CA'
+                        : 'CHƯA VÀO CA',
                     style: TextStyle(
                       fontSize: 9,
                       letterSpacing: .4,
@@ -863,12 +983,23 @@ class _HomePageState extends State<HomePage> {
           height: 51,
           width: double.infinity,
           child: FilledButton.icon(
-            onPressed: checkedOut ? null : _punch,
-            icon: Icon(
-              checkedIn ? Icons.logout_rounded : Icons.qr_code_scanner_rounded,
-            ),
+            onPressed: checkedOut || _punching ? null : _punch,
+            icon: _punching
+                ? const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Icon(
+                    checkedIn
+                        ? Icons.logout_rounded
+                        : Icons.qr_code_scanner_rounded,
+                  ),
             label: Text(
-              checkedIn ? 'Chấm công tan ca' : 'Chấm công vào ca',
+              _punching
+                  ? 'Đang xử lý chấm công…'
+                  : checkedIn
+                  ? 'Chấm công tan ca'
+                  : 'Chấm công vào ca',
               style: const TextStyle(fontWeight: FontWeight.w800),
             ),
             style: FilledButton.styleFrom(
@@ -882,8 +1013,15 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 8),
         const Center(
           child: Text(
+            'Ca chuẩn 08:00–17:00 · sau 17:00 tính tăng ca',
+            style: TextStyle(fontSize: 11, color: muted),
+          ),
+        ),
+        const SizedBox(height: 4),
+        const Center(
+          child: Text(
             'QR công ty  ·  Vị trí GPS',
-            style: TextStyle(fontSize: 11, color: Color(0xFF8B98AA)),
+            style: TextStyle(fontSize: 11, color: muted),
           ),
         ),
       ],
@@ -907,7 +1045,7 @@ class _HomePageState extends State<HomePage> {
                 Text(
                   label,
                   style: const TextStyle(
-                    color: Color(0xFF8290A3),
+                    color: muted,
                     fontSize: 9,
                     fontWeight: FontWeight.w700,
                   ),
@@ -935,7 +1073,7 @@ class _HomePageState extends State<HomePage> {
   ) => Container(
     padding: const EdgeInsets.all(14),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: surface,
       borderRadius: BorderRadius.circular(17),
     ),
     child: Row(
@@ -961,10 +1099,7 @@ class _HomePageState extends State<HomePage> {
                 color: ink,
               ),
             ),
-            Text(
-              label,
-              style: const TextStyle(fontSize: 11, color: Color(0xFF8491A3)),
-            ),
+            Text(label, style: const TextStyle(fontSize: 11, color: muted)),
           ],
         ),
       ],
@@ -974,7 +1109,7 @@ class _HomePageState extends State<HomePage> {
   Widget _locationCard() => Container(
     padding: const EdgeInsets.all(15),
     decoration: BoxDecoration(
-      color: const Color(0xFFEAF1FF),
+      color: surfaceAlt,
       borderRadius: BorderRadius.circular(18),
     ),
     child: Row(
@@ -983,7 +1118,7 @@ class _HomePageState extends State<HomePage> {
           width: 42,
           height: 42,
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: surfaceAlt,
             borderRadius: BorderRadius.circular(13),
           ),
           child: const Icon(Icons.location_on_outlined, color: blue),
@@ -994,7 +1129,7 @@ class _HomePageState extends State<HomePage> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                'Vị trí làm việc',
+                'Vị trí hiện tại',
                 style: TextStyle(
                   fontWeight: FontWeight.w800,
                   color: ink,
@@ -1002,13 +1137,23 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               Text(
-                'Lưu khoảng cách, tọa độ và sai số GPS',
-                style: TextStyle(color: Color(0xFF75859B), fontSize: 11),
+                'Nhấn biểu tượng để xem và chia sẻ vị trí',
+                style: TextStyle(color: muted, fontSize: 11),
               ),
             ],
           ),
         ),
-        const Icon(Icons.my_location_rounded, color: blue, size: 20),
+        IconButton(
+          tooltip: 'Xem và chia sẻ vị trí',
+          onPressed: _loadingLocation ? null : _shareCurrentLocation,
+          icon: _loadingLocation
+              ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                )
+              : const Icon(Icons.my_location_rounded, color: blue),
+        ),
       ],
     ),
   );
@@ -1016,16 +1161,16 @@ class _HomePageState extends State<HomePage> {
   Widget _emptyActivity() => Container(
     padding: const EdgeInsets.all(17),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: surface,
       borderRadius: BorderRadius.circular(16),
     ),
     child: const Row(
       children: [
-        Icon(Icons.event_note_outlined, color: Color(0xFF98A5B5)),
+        Icon(Icons.event_note_outlined, color: muted),
         SizedBox(width: 10),
         Text(
           'Chưa có hoạt động. Hãy chấm công để bắt đầu.',
-          style: TextStyle(fontSize: 12, color: Color(0xFF8390A2)),
+          style: TextStyle(fontSize: 12, color: muted),
         ),
       ],
     ),
@@ -1035,7 +1180,7 @@ class _HomePageState extends State<HomePage> {
     margin: const EdgeInsets.only(top: 7),
     padding: const EdgeInsets.all(13),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: surface,
       borderRadius: BorderRadius.circular(15),
     ),
     child: Row(
@@ -1062,8 +1207,26 @@ class _HomePageState extends State<HomePage> {
               ),
               Text(
                 '${item.place} · ${item.method}',
-                style: const TextStyle(color: Color(0xFF8895A6), fontSize: 11),
+                style: const TextStyle(color: muted, fontSize: 11),
               ),
+              if (item.approvalLabel != null)
+                Text(
+                  item.approvalLabel!,
+                  style: const TextStyle(
+                    color: green,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+              if (_overtimeMinutes(item) > 0)
+                Text(
+                  'Tăng ca ${_formatDuration(_overtimeMinutes(item))}',
+                  style: const TextStyle(
+                    color: green,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
             ],
           ),
         ),
@@ -1085,7 +1248,7 @@ class _HomePageState extends State<HomePage> {
       const SizedBox(height: 5),
       const Text(
         'Theo dõi các lần vào ca và tan ca',
-        style: TextStyle(color: Color(0xFF8090A4)),
+        style: TextStyle(color: muted),
       ),
       const SizedBox(height: 20),
       Container(
@@ -1172,7 +1335,7 @@ class _HomePageState extends State<HomePage> {
       const SizedBox(height: 4),
       const Text(
         'Quản lý hồ sơ và tình trạng làm việc',
-        style: TextStyle(color: Color(0xFF8090A4)),
+        style: TextStyle(color: muted),
       ),
       const SizedBox(height: 14),
       _adminSectionToggle(),
@@ -1184,7 +1347,7 @@ class _HomePageState extends State<HomePage> {
               'Nhân sự',
               '${employees.length}',
               Icons.groups_rounded,
-              const Color(0xFFEAF1FF),
+              surfaceAlt,
               blue,
             ),
           ),
@@ -1194,7 +1357,7 @@ class _HomePageState extends State<HomePage> {
               'Có mặt',
               '${employees.where((e) => e.present).length}',
               Icons.check_circle_outline,
-              const Color(0xFFE7F7F1),
+              const Color(0xFF172720),
               green,
             ),
           ),
@@ -1206,10 +1369,10 @@ class _HomePageState extends State<HomePage> {
         padding: const EdgeInsets.all(12),
         decoration: BoxDecoration(
           color: _employeeApi == null
-              ? const Color(0xFFFFF4DD)
+              ? const Color(0xFF302719)
               : _apiError == null
-              ? const Color(0xFFE7F7F1)
-              : const Color(0xFFFFEBEB),
+              ? const Color(0xFF172720)
+              : const Color(0xFF301C1D),
           borderRadius: BorderRadius.circular(13),
         ),
         child: Text(
@@ -1219,10 +1382,10 @@ class _HomePageState extends State<HomePage> {
           style: TextStyle(
             fontSize: 11,
             color: _employeeApi == null
-                ? const Color(0xFF9A6A17)
+                ? const Color(0xFFE0B863)
                 : _apiError == null
                 ? green
-                : const Color(0xFFB34444),
+                : const Color(0xFFE48B8B),
           ),
         ),
       ),
@@ -1235,7 +1398,7 @@ class _HomePageState extends State<HomePage> {
               style: TextStyle(
                 fontSize: 11,
                 letterSpacing: 1,
-                color: Color(0xFF8794A6),
+                color: muted,
                 fontWeight: FontWeight.w800,
               ),
             ),
@@ -1301,7 +1464,7 @@ class _HomePageState extends State<HomePage> {
         const SizedBox(height: 5),
         const Text(
           'Không chặn theo bán kính. Lượt xa hoặc GPS thiếu chính xác được đánh dấu để admin đối soát và hủy nếu cần.',
-          style: TextStyle(color: Color(0xFF8090A4)),
+          style: TextStyle(color: muted),
         ),
         const SizedBox(height: 14),
         _adminSectionToggle(),
@@ -1309,7 +1472,7 @@ class _HomePageState extends State<HomePage> {
         Container(
           padding: const EdgeInsets.all(14),
           decoration: BoxDecoration(
-            color: const Color(0xFFEAF1FF),
+            color: surfaceAlt,
             borderRadius: BorderRadius.circular(16),
           ),
           child: Text(
@@ -1334,9 +1497,9 @@ class _HomePageState extends State<HomePage> {
     margin: const EdgeInsets.only(bottom: 9),
     padding: const EdgeInsets.all(15),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: surface,
       borderRadius: BorderRadius.circular(17),
-      border: Border.all(color: const Color(0xFFE8EDF4)),
+      border: Border.all(color: border),
     ),
     child: Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -1360,10 +1523,7 @@ class _HomePageState extends State<HomePage> {
                   if (record.username?.isNotEmpty == true)
                     Text(
                       '@${record.username}',
-                      style: const TextStyle(
-                        color: Color(0xFF8090A4),
-                        fontSize: 12,
-                      ),
+                      style: const TextStyle(color: muted, fontSize: 12),
                     ),
                 ],
               ),
@@ -1375,14 +1535,14 @@ class _HomePageState extends State<HomePage> {
                   : () => _cancelAttendance(record),
               icon: const Icon(
                 Icons.delete_outline_rounded,
-                color: Color(0xFFD65353),
+                color: Color(0xFFE07E78),
               ),
             ),
           ],
         ),
         Text(
           '${record.action} · ${record.time.day.toString().padLeft(2, '0')}/${record.time.month.toString().padLeft(2, '0')}/${record.time.year} ${_clock(record.time)}',
-          style: const TextStyle(color: Color(0xFF526176), fontSize: 12),
+          style: const TextStyle(color: muted, fontSize: 12),
         ),
         const SizedBox(height: 9),
         Wrap(
@@ -1401,19 +1561,26 @@ class _HomePageState extends State<HomePage> {
                   : 'Sai số GPS ±${record.accuracyMeters!.toStringAsFixed(1)} m',
               record.accuracyMeters != null && record.accuracyMeters! <= 20
                   ? green
-                  : const Color(0xFFB7791F),
+                  : const Color(0xFFE0B863),
             ),
+            if (record.approvalLabel != null)
+              _recordTag(record.approvalLabel!, green),
+            if (_overtimeMinutes(record) > 0)
+              _recordTag(
+                'Tăng ca ${_formatDuration(_overtimeMinutes(record))}',
+                green,
+              ),
             if ((record.distanceFromOfficeMeters ?? 0) > 150 ||
                 record.accuracyMeters == null ||
                 record.accuracyMeters! > 25)
-              _recordTag('Cần admin đối soát', const Color(0xFFB7791F)),
+              _recordTag('Cần admin đối soát', const Color(0xFFE0B863)),
           ],
         ),
         if (record.latitude != null && record.longitude != null) ...[
           const SizedBox(height: 8),
           SelectableText(
             'GPS: ${record.latitude!.toStringAsFixed(6)}, ${record.longitude!.toStringAsFixed(6)}',
-            style: const TextStyle(color: Color(0xFF78869A), fontSize: 11),
+            style: const TextStyle(color: muted, fontSize: 11),
           ),
         ],
       ],
@@ -1462,6 +1629,9 @@ class _HomePageState extends State<HomePage> {
       setState(
         () => records.removeWhere((item) => item.recordId == record.recordId),
       );
+      await _refreshHistory();
+      await _refreshEmployees();
+      if (!mounted) return;
       ScaffoldMessenger.of(
         context,
       ).showSnackBar(const SnackBar(content: Text('Đã hủy lượt chấm công.')));
@@ -1474,13 +1644,13 @@ class _HomePageState extends State<HomePage> {
     margin: const EdgeInsets.only(bottom: 9),
     padding: const EdgeInsets.all(13),
     decoration: BoxDecoration(
-      color: Colors.white,
+      color: surface,
       borderRadius: BorderRadius.circular(16),
     ),
     child: Row(
       children: [
         CircleAvatar(
-          backgroundColor: const Color(0xFFE6EDFF),
+          backgroundColor: surfaceAlt,
           child: Text(
             e.name[0],
             style: const TextStyle(fontWeight: FontWeight.bold, color: navy),
@@ -1500,8 +1670,8 @@ class _HomePageState extends State<HomePage> {
                 ),
               ),
               Text(
-                '${e.code} · ${e.role}',
-                style: const TextStyle(color: Color(0xFF8794A6), fontSize: 11),
+                '${e.code} · ${e.role}\n${e.email.isEmpty ? 'Chưa có email liên kết' : e.email} · ${e.userId == null ? 'Chưa liên kết' : 'Đã liên kết'}',
+                style: const TextStyle(color: muted, fontSize: 11),
               ),
             ],
           ),
@@ -1510,15 +1680,15 @@ class _HomePageState extends State<HomePage> {
           padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 5),
           decoration: BoxDecoration(
             color: e.present
-                ? const Color(0xFFE7F7F1)
-                : const Color(0xFFFFF5E7),
+                ? const Color(0xFF172720)
+                : const Color(0xFF302719),
             borderRadius: BorderRadius.circular(25),
           ),
           child: Text(
             e.present ? 'Có mặt' : 'Chưa đến',
             style: TextStyle(
               fontSize: 10,
-              color: e.present ? green : const Color(0xFFC4812E),
+              color: e.present ? green : const Color(0xFFE0B863),
               fontWeight: FontWeight.w700,
             ),
           ),
@@ -1555,8 +1725,8 @@ class _HomePageState extends State<HomePage> {
           children: [
             const CircleAvatar(
               radius: 28,
-              backgroundColor: Color(0xFFDCE8FF),
-              child: Icon(Icons.person, color: navy, size: 30),
+              backgroundColor: surfaceAlt,
+              child: Icon(Icons.person, color: blue, size: 30),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1564,7 +1734,7 @@ class _HomePageState extends State<HomePage> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    widget.name,
+                    _displayName,
                     style: const TextStyle(
                       color: Colors.white,
                       fontWeight: FontWeight.w800,
@@ -1586,6 +1756,38 @@ class _HomePageState extends State<HomePage> {
         ),
       ),
       const SizedBox(height: 18),
+      if (widget.accessToken != null)
+        _setting(
+          Icons.settings,
+          'Cài đặt',
+          'Cỡ chữ, màu nền, khuôn mặt và hồ sơ',
+          () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => SettingsPage(
+                session: AuthSession(
+                  token: widget.accessToken!,
+                  fullName: _displayName,
+                  username: widget.username,
+                  userId: widget.userId,
+                  role: isAdmin ? 'Admin' : 'Employee',
+                ),
+                baseUrl: _apiBaseUrl,
+                onFaceSetup: _openFaceSetup,
+                onNameChanged: (value) {
+                  setState(() => _displayName = value);
+                  _refreshEmployees();
+                },
+              ),
+            ),
+          ),
+        ),
+      if (widget.accessToken != null)
+        _setting(
+          Icons.face_retouching_natural,
+          'Quét / đăng ký khuôn mặt',
+          'Đăng ký và kiểm tra khuôn mặt của tài khoản này',
+          _openFaceSetup,
+        ),
       _setting(
         Icons.badge_outlined,
         'Thông tin cá nhân',
@@ -1635,9 +1837,9 @@ class _HomePageState extends State<HomePage> {
         icon: const Icon(Icons.logout_rounded),
         label: const Text('Đăng xuất'),
         style: OutlinedButton.styleFrom(
-          foregroundColor: const Color(0xFFD65353),
+          foregroundColor: const Color(0xFFE07E78),
           padding: const EdgeInsets.all(15),
-          side: const BorderSide(color: Color(0xFFF0DADA)),
+          side: const BorderSide(color: border),
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(14),
           ),
@@ -1655,7 +1857,7 @@ class _HomePageState extends State<HomePage> {
     margin: const EdgeInsets.only(bottom: 9),
     child: ListTile(
       onTap: onTap,
-      tileColor: Colors.white,
+      tileColor: surface,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
       leading: Icon(icon, color: blue),
       title: Text(
@@ -1666,10 +1868,73 @@ class _HomePageState extends State<HomePage> {
           fontWeight: FontWeight.w700,
         ),
       ),
-      subtitle: Text(subtitle, style: const TextStyle(fontSize: 11)),
-      trailing: const Icon(Icons.chevron_right, color: Color(0xFF9AA6B5)),
+      subtitle: Text(
+        subtitle,
+        style: const TextStyle(fontSize: 11, color: muted),
+      ),
+      trailing: const Icon(Icons.chevron_right, color: muted),
     ),
   );
+
+  Future<void> _openFaceSetup() async {
+    if (widget.accessToken == null) {
+      _notice('Hãy đăng nhập bằng mật khẩu và OTP trước.');
+      return;
+    }
+    final session = AuthSession(
+      token: widget.accessToken!,
+      fullName: _displayName,
+      username: widget.username,
+      userId: widget.userId,
+      role: isAdmin ? 'Admin' : 'Employee',
+    );
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => FaceEnrollmentPage(
+          name: _displayName,
+          username: widget.username,
+          checkEnabled: () =>
+              BiometricSession.isEnabledFor(session, _apiBaseUrl),
+          enroll: () async {
+            if (!await BiometricSession.available()) {
+              throw Exception('Quét khuôn mặt hiện hỗ trợ trên Android.');
+            }
+            if (!await BiometricSession.authenticate()) return false;
+            await BiometricSession.save(session, _apiBaseUrl);
+            return true;
+          },
+          verify: () async {
+            final matched = await BiometricSession.unlock(_apiBaseUrl);
+            if (matched == null) return false;
+            if (matched.userId != session.userId) {
+              throw Exception(
+                'Khuôn mặt đang được đăng ký cho tài khoản khác. Hãy đăng ký lại.',
+              );
+            }
+            return true;
+          },
+          disable: BiometricSession.clear,
+        ),
+      ),
+    );
+  }
+
+  Future<void> _openScheduleRequests() async {
+    if (widget.accessToken == null) {
+      _notice('Hãy đăng nhập bằng tài khoản để gửi đơn.');
+      return;
+    }
+    await Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ScheduleRequestsPage(
+          api: ScheduleRequestApi(_apiBaseUrl, widget.accessToken!),
+          isAdmin: isAdmin,
+          userId: widget.userId,
+        ),
+      ),
+    );
+    if (mounted && _attendanceApi != null) await _refreshHistory();
+  }
 
   void _openAdminUsers() {
     if (widget.accessToken == null || _apiBaseUrl.isEmpty) {
@@ -1697,7 +1962,7 @@ class _HomePageState extends State<HomePage> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Họ tên: ${widget.name}'),
+          Text('Họ tên: $_displayName'),
           const SizedBox(height: 8),
           Text('Vai trò: ${isAdmin ? 'Quản trị viên' : 'Nhân viên'}'),
           const SizedBox(height: 8),
@@ -1748,6 +2013,7 @@ class _HomePageState extends State<HomePage> {
   void _punch() => _verifyAndPunch();
 
   Future<void> _verifyAndPunch() async {
+    setState(() => _punching = true);
     try {
       final qr = await Navigator.of(context)
           .push<String>(MaterialPageRoute(builder: (_) => const QrScanPage()));
@@ -1759,6 +2025,7 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
+      _notice('Đang lấy vị trí GPS và gửi lượt chấm công…');
       final position = await _getCurrentPosition();
       final distance = Geolocator.distanceBetween(
         position.latitude,
@@ -1774,6 +2041,10 @@ class _HomePageState extends State<HomePage> {
           '${position.latitude.toStringAsFixed(6)}, ${position.longitude.toStringAsFixed(6)}';
 
       final action = checkedIn ? 'checkOut' : 'checkIn';
+      final now = DateTime.now();
+      final overtimeMinutes = action == 'checkOut'
+          ? _calculateOvertimeMinutes(now)
+          : 0;
       if (_attendanceApi != null) {
         await _attendanceApi.record(
           type: action,
@@ -1784,16 +2055,19 @@ class _HomePageState extends State<HomePage> {
         );
       }
 
+      if (!mounted) return;
       setState(() {
         if (!checkedIn) {
           checkedIn = true;
-          employees.first.present = true;
           records.add(
             PunchRecord(
               'Chấm công vào ca',
-              DateTime.now(),
+              now,
               'Cách VP ${distance.toStringAsFixed(1)}m',
               '${accuracy == null ? 'GPS chưa có sai số' : 'GPS ±${accuracy.toStringAsFixed(1)}m'} · $coordinates',
+              userId: widget.userId,
+              employeeName: _displayName,
+              overtimeMinutes: overtimeMinutes,
             ),
           );
         } else {
@@ -1801,19 +2075,30 @@ class _HomePageState extends State<HomePage> {
           records.add(
             PunchRecord(
               'Chấm công tan ca',
-              DateTime.now(),
+              now,
               'Cách VP ${distance.toStringAsFixed(1)}m',
               '${accuracy == null ? 'GPS chưa có sai số' : 'GPS ±${accuracy.toStringAsFixed(1)}m'} · $coordinates',
+              userId: widget.userId,
+              employeeName: _displayName,
+              overtimeMinutes: overtimeMinutes,
             ),
           );
         }
       });
       if (_attendanceApi != null) await _refreshHistory();
+      if (_employeeApi != null) await _refreshEmployees();
+      if (!mounted) return;
       _notice(
-        'Đã lưu vị trí GPS${accuracy == null ? '' : ' với sai số ±${accuracy.toStringAsFixed(1)}m'} và khoảng cách ${distance.toStringAsFixed(1)}m tới văn phòng. Chấm công thành công.',
+        'Đã lưu vị trí GPS${accuracy == null ? '' : ' với sai số ±${accuracy.toStringAsFixed(1)}m'} và khoảng cách ${distance.toStringAsFixed(1)}m tới văn phòng. ${action == 'checkOut'
+            ? overtimeMinutes > 0
+                  ? 'Tăng ca ${_formatDuration(overtimeMinutes)}.'
+                  : 'Không phát sinh tăng ca.'
+            : ''} Chấm công thành công.',
       );
     } catch (error) {
       if (mounted) _notice(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _punching = false);
     }
   }
 
@@ -1841,7 +2126,7 @@ class _HomePageState extends State<HomePage> {
                 decoration: BoxDecoration(
                   color: Colors.white,
                   borderRadius: BorderRadius.circular(18),
-                  border: Border.all(color: const Color(0xFFE8EDF4)),
+                  border: Border.all(color: border),
                 ),
                 child: Image.memory(
                   qrBytes,
@@ -1855,11 +2140,7 @@ class _HomePageState extends State<HomePage> {
               const Text(
                 'Nhân viên quét mã này để chấm công. Ứng dụng lưu GPS, sai số và khoảng cách để quản trị viên đối soát.',
                 textAlign: TextAlign.center,
-                style: TextStyle(
-                  fontSize: 13,
-                  color: Color(0xFF78869A),
-                  height: 1.4,
-                ),
+                style: TextStyle(fontSize: 13, color: muted, height: 1.4),
               ),
             ],
           ),
@@ -1877,6 +2158,62 @@ class _HomePageState extends State<HomePage> {
           'Không mở được mã QR công ty: ${error.toString().replaceFirst('Exception: ', '')}',
         );
       }
+    }
+  }
+
+  Future<void> _shareCurrentLocation() async {
+    setState(() => _loadingLocation = true);
+    try {
+      final position = await _getCurrentPosition();
+      if (!mounted) return;
+      final latitude = position.latitude.toStringAsFixed(6);
+      final longitude = position.longitude.toStringAsFixed(6);
+      final mapsLink = 'https://www.google.com/maps?q=$latitude,$longitude';
+      await showDialog<void>(
+        context: context,
+        builder: (dialogContext) => AlertDialog(
+          title: const Text('Vị trí hiện tại'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              SelectableText('Tọa độ: $latitude, $longitude'),
+              const SizedBox(height: 8),
+              Text(
+                position.accuracy.isFinite && position.accuracy > 0
+                    ? 'Sai số GPS: ±${position.accuracy.toStringAsFixed(1)} m'
+                    : 'Chưa có thông tin sai số GPS',
+              ),
+              const SizedBox(height: 8),
+              const Text('Chọn Chia sẻ để gửi liên kết bản đồ.'),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(dialogContext),
+              child: const Text('Đóng'),
+            ),
+            FilledButton.icon(
+              onPressed: () async {
+                Navigator.pop(dialogContext);
+                try {
+                  await SharePlus.instance.share(
+                    ShareParams(text: 'Vị trí hiện tại của tôi: $mapsLink'),
+                  );
+                } catch (error) {
+                  if (mounted) _notice('Không mở được chia sẻ vị trí: $error');
+                }
+              },
+              icon: const Icon(Icons.share_outlined),
+              label: const Text('Chia sẻ'),
+            ),
+          ],
+        ),
+      );
+    } catch (error) {
+      if (mounted) _notice(error.toString().replaceFirst('Exception: ', ''));
+    } finally {
+      if (mounted) setState(() => _loadingLocation = false);
     }
   }
 
@@ -1924,8 +2261,71 @@ class _HomePageState extends State<HomePage> {
   ][n - 1];
   String _clock(DateTime dt) =>
       '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-  String _clockFor(String _) =>
-      records.isEmpty ? _clock(DateTime.now()) : _clock(records.last.time);
+  List<PunchRecord> _ownToday() =>
+      records
+          .where(
+            (r) =>
+                r.userId == widget.userId &&
+                DateUtils.isSameDay(r.time, DateTime.now()),
+          )
+          .toList()
+        ..sort((a, b) => a.time.compareTo(b.time));
+  String _clockFor(String type) {
+    final entries = _ownToday().where(
+      (r) => r.action.contains(type == 'IN' ? 'vào ca' : 'tan ca'),
+    );
+    return entries.isEmpty
+        ? '--:--'
+        : _clock(type == 'IN' ? entries.first.time : entries.last.time);
+  }
+
+  String _workedToday() {
+    DateTime? start;
+    var minutes = 0;
+    for (final r in _ownToday()) {
+      if (r.action.contains('vào ca')) {
+        start ??= r.time;
+      } else if (start != null) {
+        minutes += r.time.difference(start).inMinutes;
+        start = null;
+      }
+    }
+    if (start != null) minutes += DateTime.now().difference(start).inMinutes;
+    return _formatDuration(minutes.clamp(0, 1440));
+  }
+
+  int _calculateOvertimeMinutes(DateTime time) {
+    final shiftEnd = DateTime(time.year, time.month, time.day, 17);
+    return time.isAfter(shiftEnd) ? time.difference(shiftEnd).inMinutes : 0;
+  }
+
+  int _overtimeMinutes(PunchRecord record) {
+    if (!record.action.contains('tan ca')) return 0;
+    return record.overtimeMinutes ?? _calculateOvertimeMinutes(record.time);
+  }
+
+  String _formatDuration(int minutes) {
+    final hours = minutes ~/ 60;
+    final remaining = minutes % 60;
+    if (hours == 0) return '$remaining phút';
+    if (remaining == 0) return '$hours h';
+    return '$hours h $remaining p';
+  }
+
+  String _todayOvertimeLabel() {
+    final today = DateTime.now();
+    final total = records
+        .where(
+          (record) =>
+              record.userId == widget.userId &&
+              record.time.year == today.year &&
+              record.time.month == today.month &&
+              record.time.day == today.day,
+        )
+        .fold<int>(0, (sum, record) => sum + _overtimeMinutes(record));
+    return total == 0 ? '0 phút' : _formatDuration(total);
+  }
+
   void _notice(String msg) => ScaffoldMessenger.of(context).showSnackBar(
     SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating),
   );
@@ -1948,7 +2348,7 @@ class _HomePageState extends State<HomePage> {
           ),
           FilledButton(
             style: FilledButton.styleFrom(
-              backgroundColor: const Color(0xFFD65353),
+              backgroundColor: const Color(0xFFE07E78),
             ),
             onPressed: () => Navigator.pop(ctx, true),
             child: const Text('Xóa hồ sơ'),
@@ -1970,93 +2370,35 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _employeeDialog({Employee? existing}) async {
-    final name = TextEditingController(text: existing?.name ?? '');
-    final code = TextEditingController(
-      text:
-          existing?.code ??
-          'NV-${(employees.length + 2).toString().padLeft(3, '0')}',
-    );
-    final job = TextEditingController(text: existing?.role ?? 'Nhân viên');
-    final result = await showDialog<bool>(
+    final saved = await showDialog<Employee>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text(existing == null ? 'Thêm nhân viên' : 'Cập nhật nhân viên'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            TextField(
-              controller: name,
-              decoration: const InputDecoration(labelText: 'Họ và tên'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: code,
-              decoration: const InputDecoration(labelText: 'Mã nhân viên'),
-            ),
-            const SizedBox(height: 10),
-            TextField(
-              controller: job,
-              decoration: const InputDecoration(
-                labelText: 'Phòng ban / chức vụ',
-              ),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Hủy'),
-          ),
-          FilledButton(
-            onPressed: () {
-              if (name.text.trim().isEmpty ||
-                  code.text.trim().isEmpty ||
-                  job.text.trim().isEmpty) {
-                ScaffoldMessenger.of(ctx).showSnackBar(
-                  const SnackBar(
-                    content: Text('Nhập đủ họ tên, mã nhân viên và chức vụ.'),
-                  ),
-                );
-                return;
-              }
-              Navigator.pop(ctx, true);
-            },
-            child: const Text('Lưu'),
-          ),
-        ],
+      barrierDismissible: false,
+      builder: (_) => EmployeeEditorDialog(
+        existing: existing,
+        initialCode: 'NV-${(employees.length + 2).toString().padLeft(3, '0')}',
+        save: (employee) async {
+          if (_employeeApi == null) return employee;
+          return existing == null
+              ? _employeeApi.create(employee)
+              : _employeeApi.update(employee);
+        },
       ),
     );
-    if (result == true) {
-      final employee = Employee(
-        name.text.trim(),
-        job.text.trim(),
-        code.text.trim(),
-        id: existing?.id,
-        present: existing?.present ?? false,
-      );
-      try {
-        final saved = _employeeApi == null
-            ? employee
-            : existing == null
-            ? await _employeeApi.create(employee)
-            : await _employeeApi.update(employee);
-        if (!mounted) return;
-        setState(() {
-          if (existing == null) {
-            employees.add(saved);
-          } else {
-            final index = employees.indexOf(existing);
-            if (index >= 0) employees[index] = saved;
-          }
-          _apiError = null;
-        });
-      } catch (error) {
-        _notice(error.toString().replaceFirst('Exception: ', ''));
+    if (saved == null || !mounted) return;
+    setState(() {
+      if (existing == null) {
+        employees.add(saved);
+      } else {
+        final index = employees.indexWhere(
+          (e) =>
+              e.id == existing.id &&
+              (existing.id != null || identical(e, existing)),
+        );
+        if (index >= 0) employees[index] = saved;
       }
-    }
-    name.dispose();
-    code.dispose();
-    job.dispose();
+      _apiError = null;
+    });
+    _notice(existing == null ? 'Đã thêm nhân viên.' : 'Đã cập nhật nhân viên.');
   }
 }
 
@@ -2067,168 +2409,123 @@ class PressureSensorPage extends StatefulWidget {
   State<PressureSensorPage> createState() => _PressureSensorPageState();
 }
 
-class _PressureSensorPageState extends State<PressureSensorPage> {
+class _PressureSensorPageState extends State<PressureSensorPage>
+    with WidgetsBindingObserver {
   StreamSubscription<BarometerEvent>? _subscription;
   double? _pressureHpa;
   bool _sensorUnavailable = false;
-  final List<_PressureReading> _recentReadings = [];
-
-  double? get _fiveMinuteChange {
-    if (_recentReadings.length < 2) return null;
-    return (_recentReadings.last.value - _recentReadings.first.value).abs();
-  }
+  bool _paused = false;
+  bool _backgrounded = false;
+  int _generation = 0;
+  final List<PressureSample> _recentReadings = [];
 
   @override
   void initState() {
     super.initState();
-    _subscription =
-        barometerEventStream(samplingPeriod: const Duration(seconds: 1)).listen(
-          (event) {
-            if (!mounted) return;
-            final now = DateTime.now();
-            _recentReadings.add(_PressureReading(now, event.pressure));
-            _recentReadings.removeWhere(
-              (reading) =>
-                  now.difference(reading.time) > const Duration(minutes: 5),
-            );
-            setState(() => _pressureHpa = event.pressure);
-          },
-          onError: (Object error) {
-            if (mounted) setState(() => _sensorUnavailable = true);
-          },
-        );
+    WidgetsBinding.instance.addObserver(this);
+    _startSensor();
+  }
+
+  Future<void> _stopSensor() async {
+    _generation++;
+    final old = _subscription;
+    _subscription = null;
+    await old?.cancel();
+  }
+
+  Future<void> _startSensor() async {
+    final generation = ++_generation;
+    final old = _subscription;
+    _subscription = null;
+    try {
+      await old?.cancel();
+      if (!mounted || _paused || _backgrounded || generation != _generation) {
+        return;
+      }
+      _subscription =
+          barometerEventStream(
+            samplingPeriod: const Duration(seconds: 1),
+          ).listen(
+            (event) {
+              if (!mounted ||
+                  generation != _generation ||
+                  !event.pressure.isFinite ||
+                  event.pressure <= 0) {
+                return;
+              }
+              final now = DateTime.now();
+              setState(() {
+                _recentReadings.add(PressureSample(now, event.pressure));
+                _recentReadings.removeWhere(
+                  (reading) =>
+                      now.difference(reading.time) > const Duration(minutes: 5),
+                );
+                _pressureHpa = event.pressure;
+                _sensorUnavailable = false;
+              });
+            },
+            onError: (Object error) {
+              if (mounted && generation == _generation) {
+                setState(() => _sensorUnavailable = true);
+              }
+            },
+          );
+    } catch (_) {
+      if (mounted && generation == _generation) {
+        setState(() => _sensorUnavailable = true);
+      }
+    }
+  }
+
+  void _togglePause() {
+    setState(() => _paused = !_paused);
+    if (_paused) {
+      _stopSensor();
+    } else {
+      _startSensor();
+    }
+  }
+
+  void _reset() {
+    setState(() {
+      _recentReadings.clear();
+      _pressureHpa = null;
+      _sensorUnavailable = false;
+      _paused = false;
+    });
+    _startSensor();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    _backgrounded = state != AppLifecycleState.resumed;
+    if (_backgrounded) {
+      _stopSensor();
+    } else if (!_paused) {
+      _startSensor();
+    }
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    _generation++;
     _subscription?.cancel();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) => Scaffold(
-    appBar: AppBar(
-      title: const Text('Đo áp suất không khí'),
-      backgroundColor: canvas,
-      foregroundColor: ink,
-    ),
-    body: Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Icon(Icons.speed_rounded, size: 72, color: blue),
-            const SizedBox(height: 18),
-            const Text(
-              'Áp suất khí quyển',
-              style: TextStyle(
-                fontSize: 22,
-                fontWeight: FontWeight.w800,
-                color: ink,
-              ),
-            ),
-            const SizedBox(height: 10),
-            Text(
-              _sensorUnavailable
-                  ? 'Thiết bị không cung cấp cảm biến áp suất.'
-                  : _pressureHpa == null
-                  ? 'Đang đọc cảm biến…'
-                  : '${_pressureHpa!.toStringAsFixed(1)} hPa',
-              style: const TextStyle(
-                fontSize: 30,
-                color: navy,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 16),
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                color: (_fiveMinuteChange ?? 0) >= 2
-                    ? const Color(0xFFFFF3E0)
-                    : const Color(0xFFE9F8F2),
-                borderRadius: BorderRadius.circular(16),
-              ),
-              child: Row(
-                children: [
-                  Icon(
-                    (_fiveMinuteChange ?? 0) >= 2
-                        ? Icons.warning_amber_rounded
-                        : Icons.eco_outlined,
-                    color: (_fiveMinuteChange ?? 0) >= 2
-                        ? const Color(0xFFD88700)
-                        : green,
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Text(
-                          (_fiveMinuteChange ?? 0) >= 2
-                              ? 'Áp suất đang thay đổi nhanh'
-                              : 'Theo dõi môi trường trong ca',
-                          style: const TextStyle(
-                            color: ink,
-                            fontWeight: FontWeight.w800,
-                          ),
-                        ),
-                        const SizedBox(height: 4),
-                        Text(
-                          _fiveMinuteChange == null
-                              ? 'Đang thu thập dữ liệu để tạo mốc theo dõi 5 phút.'
-                              : 'Biến động 5 phút: ${_fiveMinuteChange!.toStringAsFixed(1)} hPa. Cảnh báo khi thay đổi từ 2 hPa.',
-                          style: const TextStyle(
-                            color: Color(0xFF78869A),
-                            fontSize: 12,
-                            height: 1.4,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 14),
-            const Text(
-              'Tính năng riêng TuTime: cảnh báo sớm khi áp suất môi trường thay đổi nhanh trong ca làm.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Color(0xFF78869A),
-                fontSize: 12,
-                height: 1.45,
-              ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Dữ liệu đọc trực tiếp từ cảm biến khí áp của thiết bị.',
-              textAlign: TextAlign.center,
-              style: TextStyle(color: Color(0xFF78869A)),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Trên giả lập: mở ⋮ → Virtual sensors → Additional sensors → Pressure để thay đổi giá trị mô phỏng.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: Color(0xFF78869A),
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
+    appBar: AppBar(title: const Text('Đo áp suất không khí')),
+    body: PressureDashboard(
+      readings: List<PressureSample>.from(_recentReadings),
+      current: _pressureHpa,
+      unavailable: _sensorUnavailable,
+      paused: _paused || _backgrounded,
+      onPauseToggle: _togglePause,
+      onReset: _reset,
     ),
   );
-}
-
-class _PressureReading {
-  const _PressureReading(this.time, this.value);
-  final DateTime time;
-  final double value;
 }
 
 class QrScanPage extends StatefulWidget {
@@ -2285,7 +2582,13 @@ class _QrScanPageState extends State<QrScanPage> {
     setState(() => readingImage = true);
     try {
       completed = false;
-      final capture = await controller.analyzeImage(path);
+      final capture = await controller
+          .analyzeImage(path)
+          .timeout(
+            const Duration(seconds: 15),
+            onTimeout: () =>
+                throw TimeoutException('Đọc QR mất quá lâu. Hãy thử lại.'),
+          );
       if (!mounted) return;
       final value = capture?.barcodes.isNotEmpty == true
           ? capture!.barcodes.first.rawValue
@@ -2345,6 +2648,7 @@ class _QrScanPageState extends State<QrScanPage> {
         MobileScanner(
           controller: controller,
           onDetect: (capture) {
+            if (readingImage || completed) return;
             if (capture.barcodes.isEmpty) return;
             final value = capture.barcodes.first.rawValue;
             if (value == null) return;
@@ -2383,13 +2687,22 @@ class _QrScanPageState extends State<QrScanPage> {
                 ),
               ),
               const SizedBox(height: 10),
-              OutlinedButton.icon(
+              FilledButton.icon(
                 onPressed: readingImage ? null : _scanBuiltInCompanyQr,
-                icon: const Icon(Icons.qr_code_2_rounded),
-                label: const Text('Dùng QR demo đã lưu trong app'),
-                style: OutlinedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: navy,
+                icon: readingImage
+                    ? const SizedBox.square(
+                        dimension: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.qr_code_2_rounded),
+                label: Text(
+                  readingImage
+                      ? 'Đang đọc QR…'
+                      : 'Dùng QR demo đã lưu trong app',
+                ),
+                style: FilledButton.styleFrom(
+                  backgroundColor: blue,
+                  foregroundColor: canvas,
                 ),
               ),
             ],
@@ -2544,7 +2857,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
             padding: const EdgeInsets.all(18),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [navy, Color(0xFF285B91)],
+                colors: [navy, Color(0xFF22262E)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
@@ -2560,7 +2873,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                   ),
                   child: const Icon(
                     Icons.manage_accounts_rounded,
-                    color: Colors.white,
+                    color: surface,
                     size: 28,
                   ),
                 ),
@@ -2661,7 +2974,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                     children: [
                       const Icon(
                         Icons.person_search_rounded,
-                        color: Color(0xFF9AA6B5),
+                        color: muted,
                         size: 44,
                       ),
                       const SizedBox(height: 10),
@@ -2689,10 +3002,10 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                       final isDeleting = deletingIds.contains(user.id);
                       return Card(
                         elevation: 0,
-                        color: Colors.white,
+                        color: surface,
                         shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(18),
-                          side: const BorderSide(color: Color(0xFFE9EEF5)),
+                          side: const BorderSide(color: border),
                         ),
                         child: Padding(
                           padding: const EdgeInsets.symmetric(
@@ -2706,8 +3019,8 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                             leading: CircleAvatar(
                               radius: 24,
                               backgroundColor: isAdmin
-                                  ? const Color(0xFFE9EFFF)
-                                  : const Color(0xFFE7F7F1),
+                                  ? surfaceAlt
+                                  : const Color(0xFF172720),
                               child: Icon(
                                 isAdmin
                                     ? Icons.admin_panel_settings_rounded
@@ -2746,7 +3059,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                                             : 'Chưa xác nhận',
                                         user.emailVerified
                                             ? green
-                                            : const Color(0xFFB7791F),
+                                            : const Color(0xFFE0B863),
                                       ),
                                       if (isCurrentUser)
                                         _accountTag('Bạn', navy),
@@ -2761,7 +3074,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                                     message: 'Không thể xóa tài khoản đang đăng nhập',
                                     child: Icon(
                                       Icons.lock_outline_rounded,
-                                      color: Color(0xFF9AA6B5),
+                                      color: muted,
                                     ),
                                   )
                                 : IconButton(
@@ -2778,7 +3091,7 @@ class _AdminUsersPageState extends State<AdminUsersPage> {
                                           )
                                         : const Icon(
                                             Icons.delete_outline_rounded,
-                                            color: Color(0xFFD65353),
+                                            color: Color(0xFFE07E78),
                                           ),
                                   ),
                           ),

@@ -24,7 +24,7 @@ class EmployeeApi {
   Future<List<Employee>> getAll() async {
     final response = await _client
         .get(_employeesUri, headers: _jsonHeaders)
-        .timeout(const Duration(seconds: 90));
+        .timeout(const Duration(seconds: 90), onTimeout: _timeout);
     _check(response);
     final decoded = jsonDecode(utf8.decode(response.bodyBytes));
     if (decoded is! List) {
@@ -45,7 +45,7 @@ class EmployeeApi {
           headers: _jsonHeaders,
           body: jsonEncode(employee.toJson()),
         )
-        .timeout(const Duration(seconds: 90));
+        .timeout(const Duration(seconds: 90), onTimeout: _timeout);
     _check(response);
     if (response.bodyBytes.isEmpty) return employee;
     return Employee.fromJson(
@@ -63,9 +63,12 @@ class EmployeeApi {
           headers: _jsonHeaders,
           body: jsonEncode(employee.toJson()),
         )
-        .timeout(const Duration(seconds: 90));
+        .timeout(const Duration(seconds: 90), onTimeout: _timeout);
     _check(response);
-    return employee;
+    if (response.bodyBytes.isEmpty) return employee;
+    return Employee.fromJson(
+      jsonDecode(utf8.decode(response.bodyBytes)) as Map<String, dynamic>,
+    );
   }
 
   Future<void> delete(int? id) async {
@@ -74,7 +77,7 @@ class EmployeeApi {
     }
     final response = await _client
         .delete(_baseUri.resolve('api/EmployeeApi/$id'), headers: _jsonHeaders)
-        .timeout(const Duration(seconds: 90));
+        .timeout(const Duration(seconds: 90), onTimeout: _timeout);
     _check(response);
   }
 
@@ -88,9 +91,28 @@ class EmployeeApi {
   void _check(http.Response response) {
     if (response.statusCode < 200 || response.statusCode >= 300) {
       final body = utf8.decode(response.bodyBytes);
+      String? message;
+      try {
+        final decoded = jsonDecode(body);
+        if (decoded is Map && decoded['message'] is String) {
+          message = decoded['message'] as String;
+        }
+      } catch (_) {
+        /* Non-JSON gateway responses are handled below. */
+      }
       throw Exception(
-        'API lỗi ${response.statusCode}: ${body.isEmpty ? response.reasonPhrase : body}',
+        message ??
+            switch (response.statusCode) {
+              401 => 'Phiên đăng nhập hết hạn. Vui lòng đăng nhập lại.',
+              403 => 'Chỉ quản trị viên được thay đổi hồ sơ nhân viên.',
+              _ =>
+                'Không lưu hoặc tải được nhân viên (${response.statusCode}). Vui lòng thử lại.',
+            },
       );
     }
   }
+
+  http.Response _timeout() => throw Exception(
+    'Máy chủ phản hồi chậm. Chưa xác nhận được kết quả; hãy tải lại danh sách trước khi lưu lại.',
+  );
 }
