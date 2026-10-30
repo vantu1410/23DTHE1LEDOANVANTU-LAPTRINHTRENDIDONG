@@ -8,7 +8,9 @@ Project Flutter mang tên cá nhân `LEDOANVANTU2`. Kho này chứa cả fronten
 
 ## Các chức năng đã bổ sung
 
-- Liên kết hồ sơ nhân viên do admin thêm với tài khoản đăng ký theo họ tên và email; cập nhật số nhân viên có mặt từ lượt chấm công thực tế.
+- Đăng ký và xác nhận OTP thành công tự tạo hồ sơ nhân viên trong danh sách của admin. Nếu đã có hồ sơ thủ công khớp họ tên/email, hệ thống dùng lại hồ sơ đó.
+- Admin thêm thủ công có thể tạo cả tài khoản đăng nhập bằng tên đăng nhập và mật khẩu ban đầu; nhân viên đăng nhập bằng tên đăng nhập hoặc email rồi xác nhận OTP, không cần đăng ký lại.
+- Tài khoản đã xác nhận được liên kết theo họ tên/email mà không đổi mật khẩu; cập nhật số nhân viên có mặt từ lượt chấm công thực tế.
 - Cả nhân viên và quản trị viên có mục **Quét / đăng ký khuôn mặt** tại Tổng quan và Tài khoản; có thể đăng ký, kiểm tra và tắt đăng nhập bằng khuôn mặt trên thiết bị này.
 - Cài đặt đổi cỡ chữ, màu nền và cập nhật họ tên; họ tên được đồng bộ với hồ sơ nhân viên đã liên kết.
 - Biểu đồ áp suất trong 5 phút, thống kê thấp nhất/cao nhất/trung bình, tạm dừng và đo lại.
@@ -34,6 +36,15 @@ App mặc định kết nối API đã deploy tại Render. Nếu nhóm có API 
 Khi API đã deploy, nhân viên đăng ký bằng email, username và mật khẩu; backend gửi OTP qua email. Đăng nhập dùng username, mật khẩu và OTP. Vai trò nhận từ token backend; tài khoản mới là `Employee`. Tài khoản admin được khởi tạo riêng bằng các biến `BootstrapAdmin__...` trên Render.
 
 Sau khi đăng nhập bằng mật khẩu và OTP, có thể đăng ký khuôn mặt để đăng nhập lại trên thiết bị đã đăng ký khi phiên API còn hiệu lực. Phiên hết hạn sau 8 giờ thì cần đăng nhập OTP lại. Nhận diện camera hiện phục vụ demo, chưa có cơ chế chống ảnh/video giả mạo; mẫu khuôn mặt và phiên đăng nhập được lưu mã hóa trên thiết bị. Trên giả lập, cấu hình camera trước dùng webcam laptop; GPS và áp suất của giả lập là dữ liệu mô phỏng.
+
+### Thêm nhân viên và tài khoản
+
+- **Nhân viên tự đăng ký:** hoàn tất OTP đăng ký để tự xuất hiện trong danh sách nhân viên của admin; mã nhân viên được cấp tự động, không cần admin thêm lại.
+- **Admin thêm thủ công:** nhập họ tên, email, mã nhân viên, chức vụ và mật khẩu ban đầu. Tên đăng nhập có thể tự đặt hoặc để trống để dùng mã nhân viên. Admin cung cấp thông tin đăng nhập cho nhân viên; lần đầu đăng nhập vẫn nhận OTP qua email.
+- **Email đã có tài khoản xác nhận:** họ tên phải khớp; dùng lại tài khoản và mật khẩu hiện có. Nếu hồ sơ nhân viên đã tồn tại, sửa hồ sơ sẵn có thay vì thêm trùng.
+- Tài khoản do admin tạo chưa xác nhận email cần giữ nguyên email cho đến khi hoàn tất lần đăng nhập OTP đầu tiên.
+
+Kiểm tra backend bằng `dotnet test backend/LEDOANVANTU2.Api.Tests/LEDOANVANTU2.Api.Tests.csproj`. Bộ test dùng SQLite tạm trong bộ nhớ, không gửi email và không sửa dữ liệu Render.
 
 Admin mở **Tài khoản → Mã QR công ty cố định** để hiển thị mã. Nhân viên có thể quét bằng camera, chọn ảnh QR đã lưu, hoặc trong một giả lập dùng nút **Dùng QR demo đã lưu trong app** để kiểm tra giải mã ảnh QR. QR cố định có thể bị sao chép; app lưu GPS và khoảng cách để admin đối soát, không chặn theo bán kính. Tọa độ văn phòng hiện dùng là tọa độ mẫu ở TP.HCM (`10.7769`, `106.7009`); thay `Office__Latitude`, `Office__Longitude` trên Render và dùng cùng giá trị `OFFICE_LAT`/`OFFICE_LNG` khi build APK để tính khoảng cách chính xác.
 

@@ -38,12 +38,22 @@ class EmployeeApi {
         .toList();
   }
 
-  Future<Employee> create(Employee employee) async {
+  Future<Employee> create(
+    Employee employee, {
+    String? username,
+    String? initialPassword,
+  }) async {
     final response = await _client
         .post(
           _employeesUri,
           headers: _jsonHeaders,
-          body: jsonEncode(employee.toJson()),
+          body: jsonEncode({
+            ...employee.toJson(),
+            if (username != null && username.trim().isNotEmpty)
+              'username': username.trim(),
+            if (initialPassword != null && initialPassword.isNotEmpty)
+              'initialPassword': initialPassword,
+          }),
         )
         .timeout(const Duration(seconds: 90), onTimeout: _timeout);
     _check(response);

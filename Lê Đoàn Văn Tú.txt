@@ -26,4 +26,7 @@ CÁC CHỨC NĂNG ĐÃ LÀM
 - Quản trị viên xem, duyệt hoặc từ chối đơn; nhân viên xem trạng thái xử lý.
 - Hiển thị trạng thái đi muộn/về sớm đã được duyệt trong lịch sử chấm công khi đúng thời gian cho phép.
 
+- Nhân viên tự đăng ký và xác nhận OTP sẽ tự xuất hiện trong danh sách nhân viên của Admin.
+- Admin thêm thủ công tạo luôn tài khoản và mật khẩu ban đầu; nhân viên chỉ cần đăng nhập bằng tên đăng nhập hoặc email rồi xác nhận OTP, không cần đăng ký lại.
+
 9/10 điểm

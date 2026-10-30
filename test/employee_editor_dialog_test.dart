@@ -19,9 +19,11 @@ Future<void> openEditor(
   WidgetTester tester, {
   Employee? existing,
   required Future<Employee> Function(Employee) save,
+  EmployeeEditorSave? saveWithAccount,
   ValueChanged<Employee?>? result,
+  Size surfaceSize = const Size(900, 1200),
 }) async {
-  await tester.binding.setSurfaceSize(const Size(900, 1200));
+  await tester.binding.setSurfaceSize(surfaceSize);
   addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     MaterialApp(
@@ -35,7 +37,9 @@ Future<void> openEditor(
                 builder: (_) => EmployeeEditorDialog(
                   existing: existing,
                   initialCode: 'NV-003',
-                  save: save,
+                  save:
+                      saveWithAccount ??
+                      (value, {username, initialPassword}) => save(value),
                 ),
               );
               result?.call(saved);
@@ -51,6 +55,166 @@ Future<void> openEditor(
 }
 
 void main() {
+  testWidgets('new account fields remain reachable on a small phone', (
+    tester,
+  ) async {
+    await openEditor(
+      tester,
+      surfaceSize: const Size(360, 640),
+      save: (value) async => value,
+    );
+    final passwordField = find.byKey(
+      const ValueKey('employee-initial-password'),
+    );
+    await tester.ensureVisible(passwordField);
+    await tester.pumpAndSettle();
+    expect(passwordField.hitTestable(), findsOneWidget);
+    await tester.tap(find.text('Hủy'));
+    await tester.pumpAndSettle();
+    expect(find.byType(EmployeeEditorDialog), findsNothing);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets(
+    'new employee submits credentials without storing the password in its profile',
+    (tester) async {
+      String? sentUsername;
+      String? sentPassword;
+      Employee? sentEmployee;
+      await openEditor(
+        tester,
+        save: (value) async => value,
+        saveWithAccount: (value, {username, initialPassword}) async {
+          sentEmployee = value;
+          sentUsername = username;
+          sentPassword = initialPassword;
+          return value;
+        },
+      );
+      await tester.enterText(find.byType(TextFormField).at(0), 'Nhân viên mới');
+      await tester.enterText(
+        find.byType(TextFormField).at(1),
+        'moi@example.com',
+      );
+      final usernameField = find.byKey(const ValueKey('employee-username'));
+      final passwordField = find.byKey(
+        const ValueKey('employee-initial-password'),
+      );
+      await tester.ensureVisible(usernameField);
+      await tester.enterText(usernameField, ' nv-moi ');
+      await tester.ensureVisible(passwordField);
+      await tester.enterText(passwordField, 'MatKhau123');
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: passwordField,
+                matching: find.byType(TextField),
+              ),
+            )
+            .obscureText,
+        isTrue,
+      );
+      await tester.tap(find.byTooltip('Hiện mật khẩu'));
+      await tester.pump();
+      expect(
+        tester
+            .widget<TextField>(
+              find.descendant(
+                of: passwordField,
+                matching: find.byType(TextField),
+              ),
+            )
+            .obscureText,
+        isFalse,
+      );
+      await tester.tap(find.text('Lưu'));
+      await tester.pumpAndSettle();
+      expect(sentUsername, 'nv-moi');
+      expect(sentPassword, 'MatKhau123');
+      expect(sentEmployee?.toJson().containsKey('initialPassword'), isFalse);
+      expect(sentEmployee?.toJson().toString(), isNot(contains('MatKhau123')));
+      expect(find.byType(EmployeeEditorDialog), findsNothing);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'new employee can link an existing account without supplying credentials',
+    (tester) async {
+      var calls = 0;
+      await openEditor(
+        tester,
+        save: (value) async => value,
+        saveWithAccount: (value, {username, initialPassword}) async {
+          calls++;
+          expect(username, isNull);
+          expect(initialPassword, isNull);
+          return value;
+        },
+      );
+      await tester.enterText(
+        find.byType(TextFormField).at(0),
+        'Nhân viên có tài khoản',
+      );
+      await tester.enterText(
+        find.byType(TextFormField).at(1),
+        'cu@example.com',
+      );
+      await tester.tap(find.text('Lưu'));
+      await tester.pumpAndSettle();
+      expect(calls, 1);
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets('typed invalid initial credentials are validated before saving', (
+    tester,
+  ) async {
+    var calls = 0;
+    await openEditor(
+      tester,
+      save: (value) async {
+        calls++;
+        return value;
+      },
+    );
+    await tester.enterText(find.byType(TextFormField).at(0), 'Nhân viên mới');
+    await tester.enterText(find.byType(TextFormField).at(1), 'moi@example.com');
+    final usernameField = find.byKey(const ValueKey('employee-username'));
+    final passwordField = find.byKey(
+      const ValueKey('employee-initial-password'),
+    );
+    await tester.ensureVisible(usernameField);
+    await tester.enterText(usernameField, 'ab');
+    await tester.ensureVisible(passwordField);
+    await tester.enterText(passwordField, '123');
+    await tester.tap(find.text('Lưu'));
+    await tester.pumpAndSettle();
+    expect(find.text('Tên đăng nhập phải từ 3 đến 40 ký tự.'), findsOneWidget);
+    expect(find.text('Mật khẩu phải từ 8 đến 128 ký tự.'), findsOneWidget);
+    expect(calls, 0);
+    expect(tester.takeException(), isNull);
+  });
+
+  testWidgets('editing a profile does not expose account creation fields', (
+    tester,
+  ) async {
+    await openEditor(
+      tester,
+      existing: employee(),
+      save: (value) async => value,
+    );
+    expect(find.byKey(const ValueKey('employee-username')), findsNothing);
+    expect(
+      find.byKey(const ValueKey('employee-initial-password')),
+      findsNothing,
+    );
+    await tester.tap(find.text('Hủy'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets(
     'immediate save returns saved employee and survives reverse animation',
     (tester) async {

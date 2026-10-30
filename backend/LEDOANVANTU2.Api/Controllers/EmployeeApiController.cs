@@ -2,7 +2,9 @@ using System.Security.Claims;
 using System.ComponentModel.DataAnnotations;
 using LEDOANVANTU2.Api.Data;
 using LEDOANVANTU2.Api.Models;
+using LEDOANVANTU2.Api.Services;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +13,7 @@ namespace LEDOANVANTU2.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize]
-public sealed class EmployeeApiController(AppDbContext db) : ControllerBase
+public sealed class EmployeeApiController(AppDbContext db, IPasswordHasher<AppUser> passwordHasher) : ControllerBase
 {
     [HttpGet]
     public async Task<ActionResult<IEnumerable<Employee>>> GetEmployees(CancellationToken ct)
@@ -37,10 +39,13 @@ public sealed class EmployeeApiController(AppDbContext db) : ControllerBase
 
     private async Task<string?> Link(Employee employee, CancellationToken ct)
     {
+        var previousUserId = employee.UserId;
         employee.Email = employee.Email.Trim().ToLowerInvariant();
+        if (previousUserId.HasValue && await db.Users.AnyAsync(u => u.Id == previousUserId && !u.EmailVerified && u.Email != employee.Email, ct))
+            return "Tài khoản chưa xác nhận email lần đầu. Hãy giữ nguyên email đã tạo và hoàn tất đăng nhập bằng OTP trước khi đổi liên kết.";
         employee.UserId = null;
         if (await db.Employees.AnyAsync(e => e.Id != employee.Id && e.Email == employee.Email, ct)) return "Email đã thuộc hồ sơ nhân viên khác.";
-        var user = await db.Users.SingleOrDefaultAsync(u => u.Email == employee.Email && u.EmailVerified, ct);
+        var user = await db.Users.SingleOrDefaultAsync(u => u.Email == employee.Email && (u.EmailVerified || u.Id == previousUserId), ct);
         if (user == null) return null;
         if (Normalize(user.FullName) != Normalize(employee.FullName)) return "Họ tên chưa khớp tài khoản có email này.";
         employee.UserId = user.Id;
@@ -58,8 +63,15 @@ public sealed class EmployeeApiController(AppDbContext db) : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "Admin")]
-    public async Task<ActionResult<Employee>> CreateEmployee(Employee employee, CancellationToken ct)
+    public async Task<ActionResult<Employee>> CreateEmployee(CreateEmployeeRequest request, CancellationToken ct)
     {
+        var employee = new Employee
+        {
+            Email = request.Email,
+            FullName = request.FullName,
+            Code = request.Code,
+            Role = request.Role
+        };
         var validation = Validate(employee);
         if (validation is not null) return BadRequest(new { message = validation });
         employee.FullName = employee.FullName.Trim();
@@ -67,13 +79,65 @@ public sealed class EmployeeApiController(AppDbContext db) : ControllerBase
         employee.Role = employee.Role.Trim();
         if (await db.Employees.AnyAsync(x => x.Code == employee.Code, ct))
             return Conflict(new { message = "Mã nhân viên đã tồn tại." });
-        employee.Id = 0;
-        var linkError = await Link(employee, ct);
-        if (linkError != null) return Conflict(new { message = linkError });
-        db.Employees.Add(employee);
-        try { await db.SaveChangesAsync(ct); }
-        catch (DbUpdateException) { return Conflict(new { message = "Mã nhân viên đã tồn tại." }); }
-        return CreatedAtAction(nameof(GetEmployee), new { id = employee.Id }, employee);
+        employee.Email = employee.Email.Trim().ToLowerInvariant();
+        if (await db.Employees.AnyAsync(e => e.Email == employee.Email, ct))
+            return Conflict(new { message = "Email đã có hồ sơ nhân viên. Hãy tải lại danh sách và sửa hồ sơ có sẵn." });
+
+        var user = await db.Users.SingleOrDefaultAsync(u => u.Email == employee.Email, ct);
+        if (user is not null && EmployeeRegistration.NormalizeName(user.FullName) != EmployeeRegistration.NormalizeName(employee.FullName))
+            return Conflict(new { message = "Họ tên chưa khớp tài khoản có email này." });
+        if (user is not null && await db.Employees.AnyAsync(e => e.UserId == user.Id, ct))
+            return Conflict(new { message = "Tài khoản đã liên kết với hồ sơ nhân viên khác." });
+
+        var accountCreated = user is null || !user.EmailVerified;
+        if (accountCreated)
+        {
+            if (string.IsNullOrEmpty(request.InitialPassword) || request.InitialPassword.Length is < 8 or > 128)
+                return BadRequest(new { message = "Email chưa có tài khoản đã xác nhận. Nhập mật khẩu ban đầu từ 8 đến 128 ký tự để nhân viên có thể đăng nhập ngay." });
+
+            var username = user?.Username ?? (string.IsNullOrWhiteSpace(request.Username) ? employee.Code : request.Username.Trim());
+            if (username.Length is < 3 or > 40)
+                return BadRequest(new { message = "Tên đăng nhập phải có từ 3 đến 40 ký tự." });
+            if (user is null && await db.Users.AnyAsync(u => u.Username == username, ct))
+                return Conflict(new { message = "Tên đăng nhập đã được sử dụng. Vui lòng chọn tên khác." });
+
+            user ??= new AppUser
+            {
+                Username = username,
+                Email = employee.Email,
+                FullName = employee.FullName,
+                PasswordHash = "pending",
+                Role = "Employee"
+            };
+            user.PasswordHash = passwordHasher.HashPassword(user, request.InitialPassword);
+            user.OtpHash = null;
+            user.OtpPurpose = null;
+            user.OtpExpiresAtUtc = null;
+        }
+
+        try
+        {
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            if (user!.Id == 0)
+            {
+                db.Users.Add(user);
+                await db.SaveChangesAsync(ct);
+            }
+            employee.UserId = user.Id;
+            db.Employees.Add(employee);
+            await db.SaveChangesAsync(ct);
+            await transaction.CommitAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { message = "Mã nhân viên, email hoặc tên đăng nhập vừa được sử dụng. Hãy tải lại danh sách và kiểm tra trước khi thêm lại." });
+        }
+
+        return CreatedAtAction(nameof(GetEmployee), new { id = employee.Id }, new
+        {
+            employee.Id, employee.Email, employee.UserId, employee.FullName, employee.Code,
+            employee.Role, employee.IsPresent, loginUsername = user!.Username, accountCreated
+        });
     }
 
     [HttpPut("{id:int}")]
@@ -121,3 +185,7 @@ public sealed class EmployeeApiController(AppDbContext db) : ControllerBase
         return null;
     }
 }
+
+public sealed record CreateEmployeeRequest(
+    string Email, string FullName, string Code, string Role,
+    string? Username = null, string? InitialPassword = null);

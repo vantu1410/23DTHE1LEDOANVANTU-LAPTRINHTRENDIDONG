@@ -366,9 +366,12 @@ class _LoginPageState extends State<LoginPage> {
                   ),
                   const SizedBox(height: 16),
                 ],
-                const Text(
-                  'Tên đăng nhập',
-                  style: TextStyle(fontWeight: FontWeight.w700, color: ink),
+                Text(
+                  isRegistering ? 'Tên đăng nhập' : 'Tên đăng nhập hoặc email',
+                  style: const TextStyle(
+                    fontWeight: FontWeight.w700,
+                    color: ink,
+                  ),
                 ),
                 const SizedBox(height: 8),
                 TextField(
@@ -376,9 +379,11 @@ class _LoginPageState extends State<LoginPage> {
                   autocorrect: false,
                   enableSuggestions: false,
                   autofillHints: const <String>[],
-                  decoration: const InputDecoration(
-                    prefixIcon: Icon(Icons.person_outline),
-                    hintText: 'Nhập tên đăng nhập',
+                  decoration: InputDecoration(
+                    prefixIcon: const Icon(Icons.person_outline),
+                    hintText: isRegistering
+                        ? 'Nhập tên đăng nhập'
+                        : 'Nhập tên đăng nhập hoặc email',
                   ),
                 ),
                 const SizedBox(height: 18),
@@ -2376,10 +2381,14 @@ class _HomePageState extends State<HomePage> {
       builder: (_) => EmployeeEditorDialog(
         existing: existing,
         initialCode: 'NV-${(employees.length + 2).toString().padLeft(3, '0')}',
-        save: (employee) async {
+        save: (employee, {username, initialPassword}) async {
           if (_employeeApi == null) return employee;
           return existing == null
-              ? _employeeApi.create(employee)
+              ? _employeeApi.create(
+                  employee,
+                  username: username,
+                  initialPassword: initialPassword,
+                )
               : _employeeApi.update(employee);
         },
       ),
@@ -2398,7 +2407,15 @@ class _HomePageState extends State<HomePage> {
       }
       _apiError = null;
     });
-    _notice(existing == null ? 'Đã thêm nhân viên.' : 'Đã cập nhật nhân viên.');
+    _notice(
+      existing != null
+          ? 'Đã cập nhật nhân viên.'
+          : _employeeApi == null
+          ? 'Đã thêm nhân viên ở chế độ demo.'
+          : saved.accountCreated && saved.loginUsername != null
+          ? 'Đã thêm nhân viên và tạo tài khoản ${saved.loginUsername}. Nhân viên đăng nhập bằng mật khẩu ban đầu và OTP email.'
+          : 'Đã thêm nhân viên và liên kết tài khoản hiện có.',
+    );
   }
 }
 

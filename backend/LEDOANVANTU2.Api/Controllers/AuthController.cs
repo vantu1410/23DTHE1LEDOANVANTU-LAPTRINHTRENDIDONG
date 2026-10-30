@@ -33,7 +33,8 @@ public sealed class AuthController(
         var retryingUnverifiedRegistration = user is not null &&
             !user.EmailVerified &&
             string.Equals(user.Username, username, StringComparison.OrdinalIgnoreCase) &&
-            string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase);
+            string.Equals(user.Email, email, StringComparison.OrdinalIgnoreCase) &&
+            !await db.Employees.AnyAsync(e => e.UserId == user.Id, ct);
         if (user is not null && !retryingUnverifiedRegistration)
             return Conflict(new { message = "Tên đăng nhập hoặc email đã được sử dụng." });
 
@@ -76,13 +77,16 @@ public sealed class AuthController(
     [HttpPost("login")]
     public async Task<IActionResult> Login(LoginRequest request, CancellationToken ct)
     {
-        var username = request.Username.Trim();
-        var user = await db.Users.SingleOrDefaultAsync(x => x.Username == username, ct);
-        if (user is null || !user.EmailVerified || passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
+        var user = await FindLoginUserAsync(request.Username, ct);
+        if (user is null || passwordHasher.VerifyHashedPassword(user, user.PasswordHash, request.Password) == PasswordVerificationResult.Failed)
             return Unauthorized(new { message = "Tên đăng nhập hoặc mật khẩu không đúng." });
 
+        // An admin-created account can activate its email at the first login.
+        if (!user.EmailVerified && !await db.Employees.AnyAsync(e => e.UserId == user.Id, ct))
+            return Unauthorized(new { message = "Tài khoản chưa xác nhận. Vui lòng hoàn tất OTP đăng ký." });
+
         var code = NewOtp();
-        SetOtp(user, code, "login");
+        SetOtp(user, code, user.EmailVerified ? "login" : "activate");
         await db.SaveChangesAsync(ct);
         var debugCode = await otpSender.SendAsync(user.Email, code, "đăng nhập", ct);
         return Ok(new { message = "Đã gửi mã OTP đến email của bạn.", otpRequired = true, debugOtp = environment.IsDevelopment() ? debugCode : null });
@@ -91,21 +95,41 @@ public sealed class AuthController(
     [HttpPost("verify-otp")]
     public async Task<IActionResult> VerifyOtp(VerifyOtpRequest request, CancellationToken ct)
     {
-        var user = await db.Users.SingleOrDefaultAsync(x => x.Username == request.Username.Trim(), ct);
+        var user = await FindLoginUserAsync(request.Username, ct);
         if (user is null || user.OtpHash is null || user.OtpExpiresAtUtc <= DateTimeOffset.UtcNow || user.OtpPurpose is null || !MatchesOtp(user, request.Code))
             return Unauthorized(new { message = "OTP không hợp lệ hoặc đã hết hạn." });
 
-        if (user.OtpPurpose == "register") user.EmailVerified = true;
+        if (user.OtpPurpose == "register")
+        {
+            var profileError = await EmployeeRegistration.EnsureProfileAsync(db, user, ct);
+            if (profileError is not null) return Conflict(new { message = profileError });
+        }
+        if (user.OtpPurpose is "register" or "activate") user.EmailVerified = true;
         user.OtpHash = null;
         user.OtpPurpose = null;
         user.OtpExpiresAtUtc = null;
-        await db.SaveChangesAsync(ct);
+        try
+        {
+            await db.SaveChangesAsync(ct);
+        }
+        catch (DbUpdateException)
+        {
+            return Conflict(new { message = "Hồ sơ nhân viên vừa được cập nhật. Vui lòng thử lại hoặc đăng nhập nếu tài khoản đã được xác nhận." });
+        }
 
         return Ok(new
         {
             accessToken = CreateToken(user),
             user = new { id = user.Id, fullName = user.FullName, username = user.Username, email = user.Email, role = user.Role }
         });
+    }
+
+    private async Task<AppUser?> FindLoginUserAsync(string identifier, CancellationToken ct)
+    {
+        var value = identifier.Trim();
+        var email = value.ToLowerInvariant();
+        return await db.Users.FirstOrDefaultAsync(x => x.Username == value, ct)
+            ?? await db.Users.FirstOrDefaultAsync(x => x.Email == email, ct);
     }
 
     private string CreateToken(AppUser user)

@@ -7,10 +7,14 @@ class Employee {
     this.id,
     this.email = '',
     this.userId,
+    this.loginUsername,
+    this.accountCreated = false,
   });
 
   final int? id;
   final int? userId;
+  final String? loginUsername;
+  final bool accountCreated;
   String email;
   String name;
   String role;
@@ -25,6 +29,8 @@ class Employee {
     id: (json['id'] as num?)?.toInt(),
     userId: (json['userId'] as num?)?.toInt(),
     email: (json['email'] ?? '').toString(),
+    loginUsername: json['loginUsername'] as String?,
+    accountCreated: json['accountCreated'] as bool? ?? false,
   );
 
   Map<String, dynamic> toJson() => {
