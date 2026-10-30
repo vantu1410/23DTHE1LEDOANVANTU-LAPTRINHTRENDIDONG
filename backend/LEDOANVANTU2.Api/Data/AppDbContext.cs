@@ -8,6 +8,7 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
     public DbSet<AppUser> Users => Set<AppUser>();
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<AttendanceRecord> AttendanceRecords => Set<AttendanceRecord>();
+    public DbSet<ScheduleRequest> ScheduleRequests => Set<ScheduleRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -15,5 +16,6 @@ public sealed class AppDbContext(DbContextOptions<AppDbContext> options) : DbCon
         modelBuilder.Entity<AppUser>().HasIndex(x => x.Email).IsUnique();
         modelBuilder.Entity<Employee>().HasIndex(x => x.Code).IsUnique();
         modelBuilder.Entity<AttendanceRecord>().HasIndex(x => new { x.UserId, x.RecordedAtUtc });
+        modelBuilder.Entity<ScheduleRequest>().HasIndex(x => new { x.UserId, x.WorkDate });
     }
 }

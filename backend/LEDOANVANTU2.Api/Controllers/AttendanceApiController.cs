@@ -1,3 +1,4 @@
+using LEDOANVANTU2.Api.Services;
 using System.Security.Claims;
 using LEDOANVANTU2.Api.Data;
 using LEDOANVANTU2.Api.Models;
@@ -34,13 +35,21 @@ public sealed class AttendanceApiController(AppDbContext db, IConfiguration conf
                 record.Longitude,
                 record.AccuracyMeters,
                 record.OvertimeMinutes,
-                record.Verification);
-        return Ok(await query.Take(200).ToListAsync(ct));
+                record.Verification, null);
+        var records = await query.Take(200).ToListAsync(ct);
+        if (records.Count == 0) return Ok(records);
+        var ids = records.Select(r => r.UserId).Distinct().ToArray();
+        var zone = TimeZoneInfo.FindSystemTimeZoneById("Asia/Ho_Chi_Minh");
+        var minDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(records.Min(r => r.RecordedAtUtc), zone).DateTime);
+        var maxDate = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(records.Max(r => r.RecordedAtUtc), zone).DateTime);
+        var approved = await db.ScheduleRequests.AsNoTracking().Where(r => ids.Contains(r.UserId) && r.Status == "approved" && r.WorkDate >= minDate && r.WorkDate <= maxDate).ToListAsync(ct);
+        return Ok(records.Select(r => r with { ApprovalLabel = approved.Select(a => ScheduleApproval.Label(a, r.UserId, r.Type, TimeZoneInfo.ConvertTime(r.RecordedAtUtc, zone).DateTime)).FirstOrDefault(label => label != null) }));
     }
 
     [HttpPost]
     public async Task<IActionResult> Create(AttendanceRequest request, CancellationToken ct)
     {
+        if (request.Type != "checkIn" && request.Type != "checkOut") return BadRequest(new { message = "Loại chấm công không hợp lệ." });
         const string expectedQr = "TUTIME:OFFICE:23DTHE1LEDOANVANTU-GROUP8";
         if (!string.Equals(request.QrToken, expectedQr, StringComparison.Ordinal))
             return BadRequest(new { message = "QR không hợp lệ. Hãy quét đúng mã QR cố định của công ty." });
@@ -130,4 +139,5 @@ public sealed record AttendanceHistoryDto(
     double Longitude,
     double? AccuracyMeters,
     int? OvertimeMinutes,
-    string Verification);
+    string Verification,
+    string? ApprovalLabel);
